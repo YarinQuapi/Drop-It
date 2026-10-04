@@ -1,0 +1,85 @@
+:root {
+  color: #1c2430;
+  background: #f4f6f8;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  line-height: 1.45;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+button, input, select {
+  font: inherit;
+}
+
+button, .button {
+  background: #1f7a4d;
+  color: white;
+  border: 0;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+button.secondary, a.secondary {
+  background: #e7eeea;
+  color: #1c2430;
+}
+
+button.danger { background: #9a3b3b; }
+
+.shell { max-width: 760px; margin: 0 auto; padding: 1rem 1rem 5.5rem; }
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.nav a { color: #1f7a4d; text-decoration: none; font-weight: 650; }
+.nav a.active { text-decoration: underline; }
+.nav .spacer { margin-inline-start: auto; }
+
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 2px rgb(28 36 48 / 8%);
+}
+
+h1 { font-size: 1.6rem; margin: 0 0 0.75rem; }
+h2 { font-size: 1.1rem; margin: 0 0 0.6rem; }
+
+label { display: block; margin: 0.7rem 0; }
+label span, .label { display: block; margin-bottom: 0.25rem; font-weight: 650; }
+
+input, select {
+  width: 100%;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid #c9d2cc;
+  border-radius: 10px;
+  background: white;
+}
+
+.row { display: flex; gap: 0.5rem; align-items: end; }
+.row > * { flex: 1; }
+
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.stat { background: #f7faf8; border-radius: 12px; padding: 0.7rem; }
+.stat b { display: block; font-size: 1.4rem; }
+.muted { color: #5c6b78; }
+.error { color: #9a3b3b; }
+.nutrients { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.35rem 1rem; }
+.entry { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.55rem 0; border-top: 1px solid #e6ece8; }
+.week-day { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 0.5rem; padding: 0.45rem 0; border-top: 1px solid #e6ece8; }
+
+@media (max-width: 640px) {
+  .stats { grid-template-columns: 1fr; }
+  .week-day { grid-template-columns: 1fr; }
+}

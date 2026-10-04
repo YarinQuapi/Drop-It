@@ -1,0 +1,170 @@
+// Prisma ORM 7 with the MySQL provider. Prisma ORM 8 does not ship a MySQL
+// library yet (documented as coming soon), so this is the supported Prisma + MySQL path.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum Language {
+  en
+  he
+}
+
+enum Sex {
+  male
+  female
+}
+
+enum ActivityLevel {
+  sedentary
+  light
+  moderate
+  very
+  extra
+}
+
+enum WeeklyPace {
+  kg025
+  kg050
+  kg100
+}
+
+enum FoodBasis {
+  solid
+  liquid
+}
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  passwordHash     String
+  language         Language @default(en)
+  isAdmin          Boolean  @default(false)
+  autoPublishFoods Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  sessions        Session[]
+  profile         Profile?
+  dailyGoals      DailyGoal[]
+  diaryEntries    DiaryEntry[]
+  weights         WeightEntry[]
+  foods           Food[]           @relation("FoodOwner")
+  verifiedFoods   Food[]           @relation("VerifiedBy")
+  fastingSettings FastingSettings?
+  fastingTimer    FastingTimer?
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Profile {
+  userId      String        @id
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sex         Sex
+  dateOfBirth DateTime      @db.Date
+  heightCm    Decimal       @db.Decimal(5, 1)
+  weightKg    Decimal       @db.Decimal(6, 2)
+  activity    ActivityLevel
+  weeklyPace  WeeklyPace
+  updatedAt   DateTime      @updatedAt
+}
+
+model DailyGoal {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day      DateTime @db.Date
+  goalKcal Int
+  createdAt DateTime @default(now())
+
+  @@unique([userId, day])
+}
+
+model Food {
+  id            String    @id @default(cuid())
+  barcode       String
+  name          String
+  ownerId       String
+  owner         User      @relation("FoodOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  basis         FoodBasis
+  calories      Decimal   @db.Decimal(8, 2)
+  protein       Decimal   @db.Decimal(8, 2)
+  carbohydrates Decimal   @db.Decimal(8, 2)
+  fat           Decimal   @db.Decimal(8, 2)
+  fiber         Decimal   @db.Decimal(8, 2)
+  sugars        Decimal   @db.Decimal(8, 2)
+  sodium        Decimal   @db.Decimal(8, 2)
+  published     Boolean   @default(false)
+  verifiedAt    DateTime?
+  verifiedById  String?
+  verifiedBy    User?     @relation("VerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  entries       DiaryEntry[]
+
+  @@unique([ownerId, barcode])
+  @@index([barcode, published])
+}
+
+model DiaryEntry {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day           DateTime  @db.Date
+  foodId        String?
+  food          Food?     @relation(fields: [foodId], references: [id], onDelete: SetNull)
+  name          String
+  basis         FoodBasis
+  amount        Decimal   @db.Decimal(8, 2)
+  calories      Decimal   @db.Decimal(10, 2)
+  protein       Decimal   @db.Decimal(10, 2)
+  carbohydrates Decimal   @db.Decimal(10, 2)
+  fat           Decimal   @db.Decimal(10, 2)
+  fiber         Decimal   @db.Decimal(10, 2)
+  sugars        Decimal   @db.Decimal(10, 2)
+  sodium        Decimal   @db.Decimal(10, 2)
+  createdAt     DateTime  @default(now())
+
+  @@index([userId, day])
+}
+
+model WeightEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weightKg  Decimal  @db.Decimal(6, 2)
+  loggedAt  DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId, loggedAt])
+}
+
+model FastingSettings {
+  userId      String  @id
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enabled     Boolean @default(false)
+  lengthHours Int     @default(16)
+  startHour   Int     @default(20)
+  endHour     Int     @default(12)
+}
+
+model FastingTimer {
+  userId      String    @id
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt   DateTime?
+  lengthHours Int?
+  stoppedAt   DateTime?
+}
