@@ -3,6 +3,7 @@ import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
 import { asyncRoute } from "../http.js";
 import { num } from "../present.js";
+import { requirePermission } from "../rbac.js";
 import { weightSchema } from "../schemas.js";
 
 export const weightsRouter = Router();
@@ -10,6 +11,7 @@ weightsRouter.use(requireUser);
 
 weightsRouter.get(
   "/",
+  requirePermission("weights:read"),
   asyncRoute(async (_req, res) => {
     const user = currentUser(res);
     const rows = await prisma.weightEntry.findMany({
@@ -28,6 +30,7 @@ weightsRouter.get(
 
 weightsRouter.post(
   "/",
+  requirePermission("weights:create"),
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const body = weightSchema.parse(req.body);

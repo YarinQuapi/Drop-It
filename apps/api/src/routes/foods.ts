@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { resolveBarcode } from "../domain.js";
 import { asyncRoute, HttpError } from "../http.js";
 import { presentFood } from "../present.js";
+import { requirePermission } from "../rbac.js";
 import { foodSchema, foodUpdateSchema } from "../schemas.js";
 
 export const foodsRouter = Router();
@@ -11,6 +12,7 @@ foodsRouter.use(requireUser);
 
 foodsRouter.get(
   "/:id",
+  requirePermission("foods:read"),
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const food = await prisma.food.findUnique({ where: { id: req.params.id } });
@@ -21,6 +23,7 @@ foodsRouter.get(
 
 foodsRouter.get(
   "/barcode/:code",
+  requirePermission("foods:read"),
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const barcode = decodeURIComponent(req.params.code).trim();
@@ -46,6 +49,7 @@ foodsRouter.get(
 
 foodsRouter.post(
   "/",
+  requirePermission("foods:create"),
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const body = foodSchema.parse(req.body);
@@ -66,6 +70,7 @@ foodsRouter.post(
 
 foodsRouter.put(
   "/:id",
+  requirePermission("foods:update"),
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const body = foodUpdateSchema.parse(req.body);
@@ -96,6 +101,7 @@ foodsRouter.put(
 
 foodsRouter.post(
   "/:id/publish",
+  requirePermission("foods:publish"),
   asyncRoute(async (req, res) => {
     const food = await ownFood(req.params.id, currentUser(res).id);
     const updated = await prisma.food.update({
@@ -108,6 +114,7 @@ foodsRouter.post(
 
 foodsRouter.post(
   "/:id/unpublish",
+  requirePermission("foods:publish"),
   asyncRoute(async (req, res) => {
     const food = await ownFood(req.params.id, currentUser(res).id);
     const updated = await prisma.food.update({
@@ -120,9 +127,9 @@ foodsRouter.post(
 
 foodsRouter.post(
   "/:id/verify",
+  requirePermission("foods:verify"),
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
-    if (!user.isAdmin) throw new HttpError(403, "forbidden");
     const food = await prisma.food.findUnique({ where: { id: req.params.id } });
     if (!food || !food.published) throw new HttpError(404, "not_found");
     const updated = await prisma.$transaction(async (tx) => {

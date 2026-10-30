@@ -7,6 +7,7 @@ import { daysRouter } from "./routes/days.js";
 import { fastingRouter } from "./routes/fasting.js";
 import { foodsRouter } from "./routes/foods.js";
 import { profileRouter } from "./routes/profile.js";
+import { rbacRouter } from "./routes/rbac.js";
 import { weeksRouter } from "./routes/weeks.js";
 import { weightsRouter } from "./routes/weights.js";
 
@@ -14,7 +15,14 @@ export function createApp() {
   const app = express();
   app.use(
     cors({
-      origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+      origin: [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
+      ],
       credentials: true,
     }),
   );
@@ -30,6 +38,7 @@ export function createApp() {
   app.use("/api/weeks", weeksRouter);
   app.use("/api/weights", weightsRouter);
   app.use("/api/fasting", fastingRouter);
+  app.use("/api/rbac", rbacRouter);
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     sendError(err, res);
   });

@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { asyncRoute } from "../http.js";
 import { ensureGoal } from "../goals.js";
 import { num } from "../present.js";
+import { requirePermission } from "../rbac.js";
 import { profileSchema, settingsSchema } from "../schemas.js";
 import { dayToUtcDate, todayJerusalem, utcDateToDay } from "../time.js";
 
@@ -12,6 +13,7 @@ profileRouter.use(requireUser);
 
 profileRouter.get(
   "/",
+  requirePermission("profile:read"),
   asyncRoute(async (_req, res) => {
     const user = currentUser(res);
     const profile = await prisma.profile.findUnique({ where: { userId: user.id } });
@@ -27,6 +29,7 @@ profileRouter.get(
 
 profileRouter.put(
   "/",
+  requirePermission("profile:update"),
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const body = profileSchema.parse(req.body);
@@ -57,6 +60,7 @@ profileRouter.put(
 
 profileRouter.get(
   "/settings",
+  requirePermission("profile:read"),
   asyncRoute(async (_req, res) => {
     const user = currentUser(res);
     const fresh = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
@@ -66,6 +70,7 @@ profileRouter.get(
 
 profileRouter.put(
   "/settings",
+  requirePermission("settings:update"),
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const body = settingsSchema.parse(req.body);

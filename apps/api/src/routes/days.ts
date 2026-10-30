@@ -2,9 +2,11 @@ import { Router } from "express";
 import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
 import { daySucceeded, scaleNutrients, sumNutrients, type Nutrients } from "../domain.js";
+import { closeRunningFast } from "../fasting-log.js";
 import { computeGoalKcal, ensureGoal } from "../goals.js";
 import { asyncRoute, HttpError } from "../http.js";
 import { num } from "../present.js";
+import { requirePermission } from "../rbac.js";
 import { entrySchema } from "../schemas.js";
 import { compareDays, dayToUtcDate, isDayString, todayJerusalem } from "../time.js";
 
@@ -13,6 +15,7 @@ daysRouter.use(requireUser);
 
 daysRouter.get(
   "/:day",
+  requirePermission("days:read"),
   asyncRoute(async (req, res) => {
     const day = resolveDay(req.params.day);
     const user = currentUser(res);
@@ -43,6 +46,7 @@ daysRouter.get(
 
 daysRouter.post(
   "/:day/entries",
+  requirePermission("entries:create"),
   asyncRoute(async (req, res) => {
     const day = resolveDay(req.params.day);
     const user = currentUser(res);
@@ -75,13 +79,11 @@ daysRouter.post(
           name: food.name,
           basis: food.basis,
           amount: body.amount,
+          meal: body.meal,
           ...scaled,
         },
       });
-      await tx.fastingTimer.updateMany({
-        where: { userId: user.id, startedAt: { not: null }, stoppedAt: null },
-        data: { stoppedAt: new Date() },
-      });
+      await closeRunningFast(tx, user.id);
       return created;
     });
     res.status(201).json({ entry: presentEntry(entry), goalKcal });
@@ -90,6 +92,7 @@ daysRouter.post(
 
 daysRouter.delete(
   "/:day/entries/:id",
+  requirePermission("entries:delete"),
   asyncRoute(async (req, res) => {
     const day = resolveDay(req.params.day);
     const user = currentUser(res);
@@ -133,6 +136,7 @@ function presentEntry(entry: {
   foodId: string | null;
   name: string;
   basis: "solid" | "liquid";
+  meal: "breakfast" | "lunch" | "dinner" | "snacks";
   amount: { toNumber(): number };
   calories: { toNumber(): number };
   protein: { toNumber(): number };
@@ -147,6 +151,7 @@ function presentEntry(entry: {
     foodId: entry.foodId,
     name: entry.name,
     basis: entry.basis,
+    meal: entry.meal,
     amount: num(entry.amount),
     ...entryNutrients(entry),
   };

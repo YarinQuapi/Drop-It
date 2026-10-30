@@ -5,6 +5,7 @@ import { daySucceeded, sumNutrients, weightChangeKg } from "../domain.js";
 import { computeGoalKcal, ensureGoal } from "../goals.js";
 import { asyncRoute, HttpError } from "../http.js";
 import { num } from "../present.js";
+import { requirePermission } from "../rbac.js";
 import { compareDays, dayToUtcDate, daysOfWeek, isDayString, sundayOf, todayJerusalem, utcDateToDay, weekBounds } from "../time.js";
 
 export const weeksRouter = Router();
@@ -12,6 +13,7 @@ weeksRouter.use(requireUser);
 
 weeksRouter.get(
   "/",
+  requirePermission("weeks:read"),
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const on = typeof req.query.on === "string" ? req.query.on : todayJerusalem();

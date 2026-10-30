@@ -27,6 +27,18 @@ export type Nutrients = {
   sodium: number;
 };
 
+export function approximateEndHour(startHour: number, lengthHours: number): number {
+  return (startHour + lengthHours) % 24;
+}
+
+export function fastEndsAt(startedAt: Date, lengthHours: number): Date {
+  return new Date(startedAt.getTime() + lengthHours * 60 * 60 * 1000);
+}
+
+export function fastDurationMinutes(startedAt: Date, endedAt: Date): number {
+  return Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 60000));
+}
+
 export function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -138,3 +150,43 @@ export function weightChangeKg(input: {
   before.sort((a, b) => b.loggedAt.getTime() - a.loggedAt.getTime());
   return round2(inWeek[0].weightKg - before[0].weightKg);
 }
+
+export type PasswordChecks = {
+  length: boolean;
+  english: boolean;
+  uppercase: boolean;
+  number: boolean;
+  symbol: boolean;
+  match: boolean;
+  valid: boolean;
+};
+
+export function checkPassword(password: string, confirmPassword: string = password): PasswordChecks {
+  const length = password.length >= 8 && password.length <= 200;
+  const english = password.length > 0 && /^[\x21-\x7E]+$/.test(password);
+  const uppercase = /[A-Z]/.test(password);
+  const number = /[0-9]/.test(password);
+  const symbol = /[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]/.test(password);
+  const match = password.length > 0 && password === confirmPassword;
+  return {
+    length,
+    english,
+    uppercase,
+    number,
+    symbol,
+    match,
+    valid: length && english && uppercase && number && symbol && match,
+  };
+}
+
+export function validatePassword(password: string, confirmPassword?: string): "ok" | "weak_password" | "password_mismatch" {
+  const checks = checkPassword(password, confirmPassword ?? password);
+  if (!checks.length || !checks.english || !checks.uppercase || !checks.number || !checks.symbol) {
+    return "weak_password";
+  }
+  if (confirmPassword !== undefined && !checks.match) {
+    return "password_mismatch";
+  }
+  return "ok";
+}
+

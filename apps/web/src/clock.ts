@@ -24,11 +24,32 @@ export function jerusalemParts(date = new Date()) {
   };
 }
 
+function locale() {
+  return document.documentElement.lang === "he" ? "he-IL" : "en-GB";
+}
+
 export function formatJerusalem(iso: string): string {
-  return new Intl.DateTimeFormat(document.documentElement.lang === "he" ? "he-IL" : "en-GB", {
+  return new Intl.DateTimeFormat(locale(), {
     timeZone: JERUSALEM,
     dateStyle: "medium",
     timeStyle: "short",
+  }).format(new Date(iso));
+}
+
+export function formatJerusalemDay(iso: string): string {
+  return new Intl.DateTimeFormat(locale(), {
+    timeZone: JERUSALEM,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(iso));
+}
+
+export function formatJerusalemTime(iso: string): string {
+  return new Intl.DateTimeFormat(locale(), {
+    timeZone: JERUSALEM,
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(new Date(iso));
 }
 

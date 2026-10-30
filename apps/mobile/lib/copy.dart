@@ -10,6 +10,23 @@ class Copy {
   String get signup => pick('Sign up', 'הרשמה');
   String get email => pick('Email', 'אימייל');
   String get password => pick('Password', 'סיסמה');
+  String get confirmPassword => pick('Confirm password', 'אימות סיסמה');
+  String get changePassword => pick('Change password', 'שינוי סיסמה');
+  String get currentPassword => pick('Current password', 'סיסמה נוכחית');
+  String get newPassword => pick('New password', 'סיסמה חדשה');
+  String get passwordChanged => pick('Password updated.', 'הסיסמה עודכנה.');
+  String get passwordRulesTitle => pick('Password requirements', 'דרישות סיסמה');
+  String get ruleLength => pick('At least 8 characters', 'לפחות 8 תווים');
+  String get ruleEnglish => pick('English characters only (no spaces)', 'תווים באנגלית בלבד (ללא רווחים)');
+  String get ruleUppercase => pick('At least 1 uppercase letter (A-Z)', 'לפחות אות גדולה אחת באנגלית (A-Z)');
+  String get ruleNumber => pick('At least 1 number (0-9)', 'לפחות ספרה אחת (0-9)');
+  String get ruleSymbol => pick('At least 1 symbol (!@#\$...)', 'לפחות תו מיוחד אחד (!@#\$...)');
+  String get ruleMatch => pick('Passwords match', 'הסיסמאות תואמות');
+  String get permissions => pick('Permissions', 'הרשאות');
+  String get permissionsDesc => pick(
+        'Control which operations regular users are allowed to perform.',
+        'שליטה בפעולות שמשתמשים רגילים רשאים לבצע.',
+      );
   String get today => pick('Today', 'היום');
   String get week => pick('Week', 'השבוע');
   String get weight => pick('Weight', 'משקל');
@@ -40,6 +57,8 @@ class Copy {
   String get barcode => pick('Barcode', 'ברקוד');
   String get scan => pick('Scan', 'סריקה');
   String get lookUp => pick('Look up', 'חיפוש');
+  String get log => pick('Log', 'רישום');
+  String get menu => pick('Menu', 'תפריט');
   String get amount => pick('Amount', 'כמות');
   String get add => pick('Add', 'הוספה');
   String get createFood => pick('New food', 'מזון חדש');
@@ -60,6 +79,25 @@ class Copy {
   String get chooseFood => pick('Choose a published food', 'בחירת מזון שפורסם');
   String get noFood => pick('This barcode is not in the database yet.', 'הברקוד הזה עדיין לא במאגר.');
   String get emptyDay => pick('No foods logged today.', 'עדיין לא נרשם מזון היום.');
+  String get emptyMeal => pick('Nothing logged yet.', 'עדיין לא נרשם.');
+  String get breakfast => pick('Breakfast', 'ארוחת בוקר');
+  String get lunch => pick('Lunch', 'ארוחת צהריים');
+  String get dinner => pick('Dinner', 'ארוחת ערב');
+  String get snacks => pick('Snacks', 'חטיפים');
+  String get kcal => pick('kcal', 'קק״ל');
+
+  String mealLabel(String meal) {
+    switch (meal) {
+      case 'breakfast':
+        return breakfast;
+      case 'lunch':
+        return lunch;
+      case 'dinner':
+        return dinner;
+      default:
+        return snacks;
+    }
+  }
   String get delete => pick('Remove', 'הסרה');
   String get success => pick('Goal met', 'היעד הושג');
   String get missed => pick('Over goal', 'מעל היעד');
@@ -72,9 +110,18 @@ class Copy {
   String get graphEmpty => pick('Log a weight to see the graph.', 'רשמו משקל כדי לראות את הגרף.');
   String get autoPublish => pick('Publish new foods by default', 'פרסום מזונות חדשים כברירת מחדל');
   String get fasting => pick('Intermittent fasting', 'צום לסירוגין');
-  String get startFast => pick('Start timer', 'התחלת טיימר');
-  String get stopFast => pick('Stop timer', 'עצירת טיימר');
+  String get scheduled => pick('Scheduled', 'מתוזמן');
+  String get startFast => pick('Start fast', 'התחל צום');
+  String get stopFast => pick('Stop fast', 'עצור צום');
   String get timeLeft => pick('Time left', 'זמן שנותר');
+  String get approximateEnd => pick('Approximate end', 'סיום משוער');
+  String get fastLog => pick('Fasts', 'צומות');
+  String get date => pick('Date', 'תאריך');
+  String get length => pick('Length', 'משך');
+  String get start => pick('Start', 'התחלה');
+  String get end => pick('End', 'סיום');
+  String get noFasts => pick('No fasts yet.', 'עדיין אין צומות.');
+  String get approx => pick('approx.', 'משוער');
   String get language => pick('Language', 'שפה');
   String get english => 'English';
   String get hebrew => 'עברית';
@@ -99,10 +146,38 @@ class Copy {
         'email_taken' => pick('That email is already registered.', 'האימייל הזה כבר רשום.'),
         'invalid_login' => pick('Email or password is wrong.', 'האימייל או הסיסמה שגויים.'),
         'invalid_body' => pick('Check the form and try again.', 'בדקו את הטופס ונסו שוב.'),
+        'weak_password' => pick(
+            'Password must be at least 8 English characters with an uppercase letter, a number, and a symbol.',
+            'הסיסמה חייבת להכיל לפחות 8 תווים באנגלית, אות גדולה, ספרה ותו מיוחד.',
+          ),
+        'password_mismatch' => pick('Passwords do not match.', 'הסיסמאות אינן תואמות.'),
+        'wrong_password' => pick('Current password is incorrect.', 'הסיסמה הנוכחית שגויה.'),
+        'forbidden' => pick("You don't have permission for this action.", 'אין לך הרשאה לבצע פעולה זו.'),
         'already_exists' => pick('You already have a food for this barcode.', 'כבר יש לכם מזון לברקוד הזה.'),
         'fasting_disabled' => pick('Turn fasting on before starting the timer.', 'הפעילו צום לפני התחלת הטיימר.'),
         'timer_running' => pick('A timer is already running.', 'טיימר כבר רץ.'),
         _ => pick('Something went wrong.', 'משהו השתבש.'),
+      };
+
+  String operationLabel(String op) => switch (op) {
+        'profile:read' => pick('Read profile & settings', 'צפייה בפרופיל והגדרות'),
+        'profile:update' => pick('Update body profile', 'עדכון נתוני גוף'),
+        'settings:update' => pick('Update user settings', 'עדכון הגדרות משתמש'),
+        'days:read' => pick('View daily diary & goals', 'צפייה ביומן יומי ויעדים'),
+        'entries:create' => pick('Log food entries', 'רישום אכילה ביומן'),
+        'entries:delete' => pick('Remove food entries', 'מחיקת רישומי אכילה'),
+        'foods:read' => pick('Search & view foods', 'חיפוש וצפייה במזונות'),
+        'foods:create' => pick('Create new foods', 'יצירת מזונות חדשים'),
+        'foods:update' => pick('Edit foods', 'עריכת מזונות'),
+        'foods:publish' => pick('Publish & unpublish foods', 'פרסום והפסקת שיתוף מזונות'),
+        'foods:verify' => pick('Verify published foods', 'אימות מזונות שפורסמו'),
+        'weeks:read' => pick('View weekly summary', 'צפייה בסיכום שבועי'),
+        'weights:read' => pick('View weight history', 'צפייה בהיסטוריית משקל'),
+        'weights:create' => pick('Log weight entries', 'רישום שקילות'),
+        'fasting:read' => pick('View fasting status & log', 'צפייה במצב ויומן צום'),
+        'fasting:update' => pick('Configure fasting settings', 'שינוי הגדרות צום'),
+        'fasting:timer' => pick('Start & stop fasting timer', 'הפעלה ועצירה של טיימר צום'),
+        _ => op,
       };
 
   String activityLabel(String key) => switch (key) {

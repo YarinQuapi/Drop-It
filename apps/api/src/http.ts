@@ -24,7 +24,10 @@ export function sendError(err: unknown, res: Response): void {
     return;
   }
   if (err instanceof ZodError) {
-    res.status(400).json({ error: "invalid_body" });
+    const customIssue = err.issues.find(
+      (issue) => issue.message === "weak_password" || issue.message === "password_mismatch",
+    );
+    res.status(400).json({ error: customIssue ? customIssue.message : "invalid_body" });
     return;
   }
   console.error(err);

@@ -39,6 +39,27 @@ enum FoodBasis {
   liquid
 }
 
+enum MealCategory {
+  breakfast
+  lunch
+  dinner
+  snacks
+}
+
+enum Role {
+  user
+  admin
+}
+
+model RolePermission {
+  role      Role
+  operation String
+  allowed   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@id([role, operation])
+}
+
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
@@ -57,6 +78,7 @@ model User {
   verifiedFoods   Food[]           @relation("VerifiedBy")
   fastingSettings FastingSettings?
   fastingTimer    FastingTimer?
+  fastingSessions FastingSession[]
 }
 
 model Session {
@@ -136,6 +158,7 @@ model DiaryEntry {
   fiber         Decimal   @db.Decimal(10, 2)
   sugars        Decimal   @db.Decimal(10, 2)
   sodium        Decimal   @db.Decimal(10, 2)
+  meal          MealCategory @default(snacks)
   createdAt     DateTime  @default(now())
 
   @@index([userId, day])
@@ -167,4 +190,16 @@ model FastingTimer {
   startedAt   DateTime?
   lengthHours Int?
   stoppedAt   DateTime?
+}
+
+model FastingSession {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt   DateTime
+  endedAt     DateTime?
+  lengthHours Int
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, startedAt])
 }

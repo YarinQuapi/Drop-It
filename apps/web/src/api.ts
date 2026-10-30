@@ -33,10 +33,55 @@ export type Food = Nutrients & {
   owned: boolean;
 };
 
+export type Operation =
+  | "profile:read"
+  | "profile:update"
+  | "settings:update"
+  | "days:read"
+  | "entries:create"
+  | "entries:delete"
+  | "foods:read"
+  | "foods:create"
+  | "foods:update"
+  | "foods:publish"
+  | "foods:verify"
+  | "weeks:read"
+  | "weights:read"
+  | "weights:create"
+  | "fasting:read"
+  | "fasting:update"
+  | "fasting:timer";
+
+export const OPERATIONS: Operation[] = [
+  "profile:read",
+  "profile:update",
+  "settings:update",
+  "days:read",
+  "entries:create",
+  "entries:delete",
+  "foods:read",
+  "foods:create",
+  "foods:update",
+  "foods:publish",
+  "foods:verify",
+  "weeks:read",
+  "weights:read",
+  "weights:create",
+  "fasting:read",
+  "fasting:update",
+  "fasting:timer",
+];
+
 export type Me = {
   user: { id: string; email: string; language: "en" | "he"; isAdmin: boolean; autoPublishFoods: boolean };
   hasProfile: boolean;
   fastingEnabled: boolean;
+  permissions: Operation[];
+};
+
+export type PermissionsResponse = {
+  operations: Operation[];
+  permissions: Record<Operation, boolean>;
 };
 
 export type Profile = {
@@ -48,11 +93,16 @@ export type Profile = {
   weeklyPace: "kg025" | "kg050" | "kg100";
 };
 
+export type MealCategory = "breakfast" | "lunch" | "dinner" | "snacks";
+
+export const MEALS: MealCategory[] = ["breakfast", "lunch", "dinner", "snacks"];
+
 export type DayEntry = Nutrients & {
   id: string;
   foodId: string | null;
   name: string;
   basis: "solid" | "liquid";
+  meal: MealCategory;
   amount: number;
 };
 
@@ -75,6 +125,16 @@ export type WeekResponse = {
 
 export type WeightPoint = { id: string; weightKg: number; loggedAt: string };
 
+export type FastingSession = {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  endsAt: string;
+  lengthHours: number;
+  running: boolean;
+  durationMinutes: number | null;
+};
+
 export type FastingState = {
   enabled: boolean;
   lengthHours: number;
@@ -84,4 +144,5 @@ export type FastingState = {
   startedAt: string | null;
   endsAt: string | null;
   lengthHoursRunning: number | null;
+  sessions: FastingSession[];
 };
