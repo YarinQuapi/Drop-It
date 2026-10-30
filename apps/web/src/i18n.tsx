@@ -18,6 +18,10 @@ const en = {
   ruleNumber: "At least 1 number (0-9)",
   ruleSymbol: "At least 1 symbol (!@#$...)",
   ruleMatch: "Passwords match",
+  appearance: "Appearance",
+  themeSystem: "System",
+  themeLight: "Light",
+  themeDark: "Dark",
   permissions: "Permissions",
   permissionsDesc: "Control which operations regular users are allowed to perform.",
   "op_profile:read": "Read profile & settings",
@@ -37,8 +41,12 @@ const en = {
   "op_fasting:read": "View fasting status & log",
   "op_fasting:update": "Configure fasting settings",
   "op_fasting:timer": "Start & stop fasting timer",
+  "op_appleHealth:read": "View Apple Health data",
+  "op_appleHealth:sync": "Sync Apple Health",
   needAccount: "Create an account",
   haveAccount: "I already have an account",
+  continueWithApple: "Continue with Apple",
+  orDivider: "or",
   logout: "Log out",
   today: "Today",
   week: "Week",
@@ -60,6 +68,10 @@ const en = {
   male: "Male",
   female: "Female",
   dateOfBirth: "Date of birth",
+  chooseDate: "Choose a date",
+  prevMonth: "Previous month",
+  nextMonth: "Next month",
+  chooseYear: "Choose a year",
   height: "Height (cm)",
   weightKg: "Weight (kg)",
   activity: "Activity",
@@ -77,6 +89,27 @@ const en = {
   eaten: "Eaten",
   remaining: "Remaining",
   estimate: "This number is an estimate from the Mifflin–St Jeor formula.",
+  appleHealth: "Apple Health",
+  healthSteps: "Steps",
+  healthExercise: "Exercise",
+  healthMinutes: "min",
+  healthActiveKcal: "Active calories",
+  healthBaseGoal: "Base goal",
+  healthEstimate: "Today's goal is a sedentary base plus the active calories from Apple Health.",
+  healthLastSync: "Last sync",
+  healthNever: "Never",
+  healthConnected: "Connected",
+  healthNotConnected: "Not connected",
+  healthWebOnly: "Apple Health is connected from the Drop It app on your iPhone. Open Settings there to connect.",
+  healthStepGoal: "Daily step goal",
+  healthExerciseGoal: "Daily exercise goal (minutes)",
+  healthActivityNote: "While Apple Health is connected, the activity level is not used for your calorie goal.",
+  healthConnect: "Connect Apple Health",
+  healthDisconnect: "Disconnect",
+  healthSyncNow: "Sync now",
+  healthDenied: "Apple Health access was not granted.",
+  healthSource: "Apple Health",
+  manualSource: "Manual",
   barcode: "Barcode",
   lookUp: "Look up",
   log: "Log",
@@ -150,6 +183,12 @@ const en = {
   weak_password: "Password must be at least 8 English characters with an uppercase letter, a number, and a symbol.",
   password_mismatch: "Passwords do not match.",
   wrong_password: "Current password is incorrect.",
+  no_password: "This account signs in with Apple and has no password.",
+  apple_failed: "Apple sign-in failed. Try again.",
+  apple_cancelled: "Apple sign-in was cancelled.",
+  apple_unverified_email: "An account with this email exists, but Apple has not verified it. Log in with your password.",
+  apple_no_email: "Apple did not share an email address. Use email and password to sign up.",
+  apple_unavailable: "Apple sign-in is not available right now.",
   unauthorized: "Log in again.",
   profile_required: "Add your body stats first.",
   already_exists: "You already have a food for this barcode.",
@@ -179,6 +218,10 @@ const he: typeof en = {
   ruleNumber: "לפחות ספרה אחת (0-9)",
   ruleSymbol: "לפחות תו מיוחד אחד (!@#$...)",
   ruleMatch: "הסיסמאות תואמות",
+  appearance: "מראה",
+  themeSystem: "מערכת",
+  themeLight: "בהיר",
+  themeDark: "כהה",
   permissions: "הרשאות",
   permissionsDesc: "שליטה בפעולות שמשתמשים רגילים רשאים לבצע.",
   "op_profile:read": "צפייה בפרופיל והגדרות",
@@ -198,8 +241,12 @@ const he: typeof en = {
   "op_fasting:read": "צפייה במצב ויומן צום",
   "op_fasting:update": "שינוי הגדרות צום",
   "op_fasting:timer": "הפעלה ועצירה של טיימר צום",
+  "op_appleHealth:read": "צפייה בנתוני Apple Health",
+  "op_appleHealth:sync": "סנכרון Apple Health",
   needAccount: "יצירת חשבון",
   haveAccount: "יש לי חשבון",
+  continueWithApple: "המשך באמצעות Apple",
+  orDivider: "או",
   logout: "יציאה",
   today: "היום",
   week: "השבוע",
@@ -221,6 +268,10 @@ const he: typeof en = {
   male: "זכר",
   female: "נקבה",
   dateOfBirth: "תאריך לידה",
+  chooseDate: "בחירת תאריך",
+  prevMonth: "חודש קודם",
+  nextMonth: "חודש הבא",
+  chooseYear: "בחירת שנה",
   height: "גובה (ס״מ)",
   weightKg: "משקל (ק״ג)",
   activity: "פעילות",
@@ -238,6 +289,27 @@ const he: typeof en = {
   eaten: "נאכל",
   remaining: "נותר",
   estimate: "המספר הזה הוא אומדן לפי נוסחת מיפלין–סנט ג׳ור.",
+  appleHealth: "Apple Health",
+  healthSteps: "צעדים",
+  healthExercise: "פעילות גופנית",
+  healthMinutes: "דק׳",
+  healthActiveKcal: "קלוריות פעילות",
+  healthBaseGoal: "יעד בסיס",
+  healthEstimate: "היעד של היום הוא בסיס יושבני בתוספת הקלוריות הפעילות מ-Apple Health.",
+  healthLastSync: "סנכרון אחרון",
+  healthNever: "אף פעם",
+  healthConnected: "מחובר",
+  healthNotConnected: "לא מחובר",
+  healthWebOnly: "Apple Health מתחבר מאפליקציית Drop It באייפון. פתחו שם את ההגדרות כדי להתחבר.",
+  healthStepGoal: "יעד צעדים יומי",
+  healthExerciseGoal: "יעד פעילות יומי (דקות)",
+  healthActivityNote: "כש-Apple Health מחובר, רמת הפעילות אינה משמשת לחישוב יעד הקלוריות.",
+  healthConnect: "חיבור Apple Health",
+  healthDisconnect: "ניתוק",
+  healthSyncNow: "סנכרון עכשיו",
+  healthDenied: "לא ניתנה גישה ל-Apple Health.",
+  healthSource: "Apple Health",
+  manualSource: "ידני",
   barcode: "ברקוד",
   lookUp: "חיפוש",
   log: "רישום",
@@ -311,6 +383,12 @@ const he: typeof en = {
   weak_password: "הסיסמה חייבת להכיל לפחות 8 תווים באנגלית, אות גדולה, ספרה ותו מיוחד.",
   password_mismatch: "הסיסמאות אינן תואמות.",
   wrong_password: "הסיסמה הנוכחית שגויה.",
+  no_password: "החשבון הזה מתחבר עם Apple ואין לו סיסמה.",
+  apple_failed: "ההתחברות עם Apple נכשלה. נסו שוב.",
+  apple_cancelled: "ההתחברות עם Apple בוטלה.",
+  apple_unverified_email: "קיים חשבון עם האימייל הזה, אבל Apple לא אימתה אותו. התחברו עם הסיסמה.",
+  apple_no_email: "Apple לא שיתפה כתובת אימייל. הירשמו עם אימייל וסיסמה.",
+  apple_unavailable: "ההתחברות עם Apple אינה זמינה כרגע.",
   unauthorized: "התחברו שוב.",
   profile_required: "קודם מוסיפים את נתוני הגוף.",
   already_exists: "כבר יש לכם מזון לברקוד הזה.",
@@ -342,5 +420,48 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 export function useI18n() {
   const value = useContext(LanguageContext);
   if (!value) throw new Error("language");
+  return value;
+}
+
+export type ThemeMode = "system" | "light" | "dark";
+export const THEME_MODES: ThemeMode[] = ["system", "light", "dark"];
+const THEME_KEY = "dropit_theme";
+
+function readThemeMode(): ThemeMode {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  } catch {}
+  return "system";
+}
+
+function applyThemeMode(mode: ThemeMode) {
+  const root = document.documentElement;
+  if (mode === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", mode);
+}
+
+const ThemeContext = createContext<{ mode: ThemeMode; setMode: (mode: ThemeMode) => void } | null>(null);
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [mode, setModeState] = useState<ThemeMode>(readThemeMode);
+  useEffect(() => {
+    applyThemeMode(mode);
+  }, [mode]);
+  const value = useMemo(() => ({
+    mode,
+    setMode: (next: ThemeMode) => {
+      try {
+        localStorage.setItem(THEME_KEY, next);
+      } catch {}
+      setModeState(next);
+    },
+  }), [mode]);
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
+
+export function useTheme() {
+  const value = useContext(ThemeContext);
+  if (!value) throw new Error("theme");
   return value;
 }

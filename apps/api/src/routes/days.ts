@@ -3,7 +3,7 @@ import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
 import { daySucceeded, scaleNutrients, sumNutrients, type Nutrients } from "../domain.js";
 import { closeRunningFast } from "../fasting-log.js";
-import { computeGoalKcal, ensureGoal } from "../goals.js";
+import { resolveGoal } from "../goals.js";
 import { asyncRoute, HttpError } from "../http.js";
 import { num } from "../present.js";
 import { requirePermission } from "../rbac.js";
@@ -21,8 +21,9 @@ daysRouter.get(
     const user = currentUser(res);
     const today = todayJerusalem();
     const future = compareDays(day, today) > 0;
-    const goalKcal = future ? await computeGoalKcal(user.id, day) : await ensureGoal(user.id, day);
-    if (goalKcal == null) throw new HttpError(409, "profile_required");
+    const goal = await resolveGoal(user.id, day, { future });
+    if (!goal) throw new HttpError(409, "profile_required");
+    const { goalKcal } = goal;
     const entries = await prisma.diaryEntry.findMany({
       where: { userId: user.id, day: dayToUtcDate(day) },
       orderBy: { createdAt: "asc" },
@@ -30,7 +31,7 @@ daysRouter.get(
     const nutrients = sumNutrients(entries.map(entryNutrients));
     res.json({
       day,
-      goalKcal,
+      ...goal,
       entries: entries.map(presentEntry),
       totals: nutrients,
       success: daySucceeded({
@@ -56,8 +57,8 @@ daysRouter.post(
     const food = await prisma.food.findUnique({ where: { id: body.foodId } });
     if (!food) throw new HttpError(404, "not_found");
     if (food.ownerId !== user.id && !food.published) throw new HttpError(403, "forbidden");
-    const goalKcal = await ensureGoal(user.id, day);
-    if (goalKcal == null) throw new HttpError(409, "profile_required");
+    const goal = await resolveGoal(user.id, day, { future: false });
+    if (!goal) throw new HttpError(409, "profile_required");
     const scaled = scaleNutrients(
       {
         calories: num(food.calories),
@@ -86,7 +87,7 @@ daysRouter.post(
       await closeRunningFast(tx, user.id);
       return created;
     });
-    res.status(201).json({ entry: presentEntry(entry), goalKcal });
+    res.status(201).json({ entry: presentEntry(entry), goalKcal: goal.goalKcal });
   }),
 );
 

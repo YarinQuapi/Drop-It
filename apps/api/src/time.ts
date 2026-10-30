@@ -60,6 +60,14 @@ export function isDayString(value: string): boolean {
   );
 }
 
+/** Year-first dates with `-`, `/`, or `.` separators, normalized to `yyyy-mm-dd`. */
+export function canonicalDay(value: string): string | null {
+  const match = value.trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (!match) return null;
+  const day = `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+  return isDayString(day) ? day : null;
+}
+
 export function dayToUtcDate(day: string): Date {
   return new Date(`${day}T00:00:00.000Z`);
 }

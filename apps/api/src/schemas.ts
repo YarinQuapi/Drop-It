@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { validatePassword } from "./domain.js";
+import { canonicalDay } from "./time.js";
 
 export const languageSchema = z.enum(["en", "he"]);
 export const sexSchema = z.enum(["male", "female"]);
@@ -7,9 +8,16 @@ export const activitySchema = z.enum(["sedentary", "light", "moderate", "very", 
 export const paceSchema = z.enum(["kg025", "kg050", "kg100"]);
 export const basisSchema = z.enum(["solid", "liquid"]);
 export const mealSchema = z.enum(["breakfast", "lunch", "dinner", "snacks"]);
-export const daySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+export const daySchema = z.string().transform((value, ctx) => {
+  const day = canonicalDay(value);
+  if (!day) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "invalid_body" });
+    return z.NEVER;
+  }
+  return day;
+});
 
-const nutrient = z.number().min(0).max(100000);
+const nutrient = z.number().finite().min(0).max(100000);
 
 export const nutrientsSchema = z.object({
   calories: nutrient,
@@ -40,6 +48,12 @@ export const signupSchema = z
 export const loginSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(1),
+});
+
+export const appleSignInSchema = z.object({
+  identityToken: z.string().min(1).max(8000),
+  nonce: z.string().min(8).max(200),
+  language: languageSchema.optional(),
 });
 
 export const changePasswordSchema = z
@@ -91,6 +105,36 @@ export const entrySchema = z.object({
 export const weightSchema = z.object({
   weightKg: z.number().gt(0).max(500),
   loggedAt: z.string().datetime().optional(),
+});
+
+export const healthSettingsSchema = z.object({
+  exerciseGoalMinutes: z.number().int().min(1).max(1440),
+  stepGoal: z.number().int().min(100).max(200000),
+});
+
+export const healthSyncSchema = z.object({
+  weights: z
+    .array(
+      z.object({
+        externalId: z.string().min(1).max(64),
+        weightKg: z.number().gt(0).max(500),
+        loggedAt: z.string().datetime({ offset: true }),
+      }),
+    )
+    .max(1000)
+    .default([]),
+  deletedWeightIds: z.array(z.string().min(1).max(64)).max(1000).default([]),
+  days: z
+    .array(
+      z.object({
+        day: daySchema,
+        steps: z.number().min(0).max(1000000),
+        exerciseMinutes: z.number().min(0).max(1440),
+        activeKcal: z.number().min(0).max(20000),
+      }),
+    )
+    .max(60)
+    .default([]),
 });
 
 export const fastingSchema = z.object({

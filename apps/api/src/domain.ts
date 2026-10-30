@@ -125,6 +125,56 @@ export function daySucceeded(input: { entryCount: number; calories: number; goal
   return input.calories <= input.goalKcal;
 }
 
+/**
+ * A day uses the sedentary base (plus Apple active kcal) only while Apple Health is
+ * connected, from the connection day through today. Future days keep the profile estimate.
+ */
+export function usesHealthBase(input: {
+  connected: boolean;
+  connectedOn: string | null;
+  day: string;
+  today: string;
+}): boolean {
+  if (!input.connected || input.connectedOn == null) return false;
+  return input.day >= input.connectedOn && input.day <= input.today;
+}
+
+/** Food budget for a day: the frozen base, plus Apple active kcal when the day is health adjusted. */
+export function effectiveGoalKcal(baseGoalKcal: number, activeKcal: number, healthAdjusted: boolean): number {
+  return healthAdjusted ? baseGoalKcal + Math.max(0, Math.round(activeKcal)) : baseGoalKcal;
+}
+
+export type WeekDayCandidate = {
+  day: string;
+  goalKcal: number;
+  calories: number;
+  entryCount: number;
+  success: boolean;
+  future: boolean;
+  steps?: number | null;
+  exerciseMinutes?: number | null;
+  activeKcal?: number;
+};
+
+export type WeekDaySummary = Omit<WeekDayCandidate, "entryCount">;
+
+export function summarizeWeekDays(rows: WeekDayCandidate[]): {
+  goalKcal: number;
+  activeKcal: number;
+  calorieIntake: number;
+  successCount: number;
+  days: WeekDaySummary[];
+} {
+  const goalKcal = rows.reduce((sum, row) => sum + row.goalKcal, 0);
+  const activeKcal = rows.reduce((sum, row) => sum + (row.activeKcal ?? 0), 0);
+  const calorieIntake = round2(rows.reduce((sum, row) => sum + row.calories, 0));
+  const successCount = rows.filter((row) => row.success).length;
+  const days = rows
+    .filter((row) => !row.future && row.entryCount > 0 && row.calories > 0)
+    .map(({ entryCount: _entryCount, ...row }) => row);
+  return { goalKcal, activeKcal, calorieIntake, successCount, days };
+}
+
 export type BarcodeStatus = "personal" | "verified" | "list" | "none";
 
 export function resolveBarcode<T>(input: { own: T | null; verified: T | null; published: T[] }): {

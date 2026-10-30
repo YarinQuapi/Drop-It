@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
-import { daySucceeded, sumNutrients, weightChangeKg } from "../domain.js";
-import { computeGoalKcal, ensureGoal } from "../goals.js";
+import { daySucceeded, summarizeWeekDays, sumNutrients, weightChangeKg } from "../domain.js";
+import { loadHealthSettings, resolveGoal } from "../goals.js";
 import { asyncRoute, HttpError } from "../http.js";
 import { num } from "../present.js";
 import { requirePermission } from "../rbac.js";
@@ -24,17 +24,23 @@ weeksRouter.get(
     const sunday = sundayOf(on);
     const days = daysOfWeek(sunday);
     const bounds = weekBounds(sunday);
-    const [entries, weights] = await Promise.all([
+    const [entries, weights, healthDays, settings] = await Promise.all([
       prisma.diaryEntry.findMany({
         where: { userId: user.id, day: { gte: dayToUtcDate(sunday), lte: dayToUtcDate(days[6]) } },
       }),
       prisma.weightEntry.findMany({ where: { userId: user.id } }),
+      prisma.healthDay.findMany({
+        where: { userId: user.id, day: { gte: dayToUtcDate(sunday), lte: dayToUtcDate(days[6]) } },
+      }),
+      loadHealthSettings(user.id),
     ]);
     const dayRows = [];
     for (const day of days) {
       const future = compareDays(day, today) > 0;
-      const goalKcal = future ? await computeGoalKcal(user.id, day) : await ensureGoal(user.id, day);
-      if (goalKcal == null) throw new HttpError(409, "profile_required");
+      const healthDay = healthDays.find((row) => utcDateToDay(row.day) === day) ?? null;
+      const goal = await resolveGoal(user.id, day, { future, settings, healthDay });
+      if (!goal) throw new HttpError(409, "profile_required");
+      const { goalKcal } = goal;
       const dayEntries = entries.filter((entry) => utcDateToDay(entry.day) === day);
       const totals = sumNutrients(
         dayEntries.map((entry) => ({
@@ -53,29 +59,35 @@ weeksRouter.get(
         goalKcal,
         future,
       });
-      dayRows.push({ day, goalKcal, calories: totals.calories, success, future });
+      dayRows.push({
+        day,
+        goalKcal,
+        calories: totals.calories,
+        entryCount: dayEntries.length,
+        success,
+        future,
+        steps: healthDay ? healthDay.steps : null,
+        exerciseMinutes: healthDay ? healthDay.exerciseMinutes : null,
+        activeKcal: goal.activeKcal,
+      });
     }
     const change = weightChangeKg({
       weights: weights.map((entry) => ({ loggedAt: entry.loggedAt, weightKg: num(entry.weightKg) })),
       start: bounds.start,
       end: bounds.end,
     });
+    const summary = summarizeWeekDays(dayRows);
     res.json({
       sunday,
-      calorieIntake: sumNutrients(
-        dayRows.map((row) => ({
-          calories: row.calories,
-          protein: 0,
-          carbohydrates: 0,
-          fat: 0,
-          fiber: 0,
-          sugars: 0,
-          sodium: 0,
-        })),
-      ).calories,
-      successCount: dayRows.filter((row) => row.success).length,
+      goalKcal: summary.goalKcal,
+      activeKcal: summary.activeKcal,
+      healthSynced: settings.lastSyncedAt != null,
+      stepGoal: settings.stepGoal,
+      exerciseGoalMinutes: settings.exerciseGoalMinutes,
+      calorieIntake: summary.calorieIntake,
+      successCount: summary.successCount,
       weightChangeKg: change,
-      days: dayRows,
+      days: summary.days,
     });
   }),
 );

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
 import { asyncRoute } from "../http.js";
-import { ensureGoal } from "../goals.js";
+import { ensureGoal, resolveGoal } from "../goals.js";
 import { num } from "../present.js";
 import { requirePermission } from "../rbac.js";
 import { profileSchema, settingsSchema } from "../schemas.js";
@@ -21,9 +21,8 @@ profileRouter.get(
       res.json({ profile: null, goalKcal: null });
       return;
     }
-    const today = todayJerusalem();
-    const goalKcal = await ensureGoal(user.id, today);
-    res.json({ profile: presentProfile(profile), goalKcal });
+    const goal = await resolveGoal(user.id, todayJerusalem(), { future: false });
+    res.json({ profile: presentProfile(profile), goalKcal: goal?.goalKcal ?? null });
   }),
 );
 
@@ -53,8 +52,9 @@ profileRouter.put(
         weeklyPace: body.weeklyPace,
       },
     });
-    const goalKcal = await ensureGoal(user.id, todayJerusalem(), true);
-    res.json({ profile: presentProfile(profile), goalKcal });
+    await ensureGoal(user.id, todayJerusalem(), true);
+    const goal = await resolveGoal(user.id, todayJerusalem(), { future: false });
+    res.json({ profile: presentProfile(profile), goalKcal: goal?.goalKcal ?? null });
   }),
 );
 

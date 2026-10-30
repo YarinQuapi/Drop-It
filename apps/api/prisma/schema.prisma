@@ -51,6 +51,11 @@ enum Role {
   admin
 }
 
+enum WeightSource {
+  manual
+  health
+}
+
 model RolePermission {
   role      Role
   operation String
@@ -63,7 +68,8 @@ model RolePermission {
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
-  passwordHash     String
+  passwordHash     String?
+  appleSub         String?  @unique
   language         Language @default(en)
   isAdmin          Boolean  @default(false)
   autoPublishFoods Boolean  @default(false)
@@ -79,6 +85,8 @@ model User {
   fastingSettings FastingSettings?
   fastingTimer    FastingTimer?
   fastingSessions FastingSession[]
+  healthSettings  HealthSettings?
+  healthDays      HealthDay[]
 }
 
 model Session {
@@ -110,6 +118,8 @@ model DailyGoal {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   day      DateTime @db.Date
   goalKcal Int
+  // True when goalKcal is the sedentary base and that day's Apple active kcal is added on read.
+  healthAdjusted Boolean @default(false)
   createdAt DateTime @default(now())
 
   @@unique([userId, day])
@@ -170,9 +180,35 @@ model WeightEntry {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   weightKg  Decimal  @db.Decimal(6, 2)
   loggedAt  DateTime
+  source     WeightSource @default(manual)
+  externalId String?      @db.VarChar(64)
   createdAt DateTime @default(now())
 
+  @@unique([userId, externalId])
   @@index([userId, loggedAt])
+}
+
+model HealthSettings {
+  userId              String    @id
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connected           Boolean   @default(false)
+  connectedOn         DateTime? @db.Date
+  lastSyncedAt        DateTime?
+  exerciseGoalMinutes Int       @default(30)
+  stepGoal            Int       @default(10000)
+}
+
+model HealthDay {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day             DateTime @db.Date
+  steps           Int      @default(0)
+  exerciseMinutes Int      @default(0)
+  activeKcal      Int      @default(0)
+  syncedAt        DateTime @default(now())
+
+  @@unique([userId, day])
 }
 
 model FastingSettings {

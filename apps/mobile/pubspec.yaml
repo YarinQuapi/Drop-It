@@ -36,9 +36,12 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.6.0
   flutter_secure_storage: ^11.2.0
+  path_provider: ^2.1.5
   mobile_scanner: ^7.4.2
   flutter_local_notifications: ^22.3.1
   timezone: ^0.11.1
+  sign_in_with_apple: ^8.2.0
+  crypto: ^3.0.8
 
 dev_dependencies:
   flutter_test:

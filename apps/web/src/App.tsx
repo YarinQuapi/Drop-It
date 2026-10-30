@@ -4,6 +4,7 @@ import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, usePa
 import {
   api,
   ApiError,
+  type AppleHealthState,
   type DayResponse,
   type FastingSession,
   type FastingState,
@@ -15,11 +16,14 @@ import {
   type Operation,
   type PermissionsResponse,
   type Profile,
+  setStoredToken,
   type WeekResponse,
   type WeightPoint,
 } from "./api";
+import { fetchAppleConfig, signInWithApple, type AppleConfig } from "./apple";
 import { addDays, formatJerusalem, formatJerusalemDay, formatJerusalemTime, hourLabel, jerusalemParts, msUntilHour } from "./clock";
-import { useI18n, type Copy, type Lang } from "./i18n";
+import { THEME_MODES, useI18n, useTheme, type Copy, type Lang, type ThemeMode } from "./i18n";
+import { DateField, MenuField } from "./pickers";
 
 export function App() {
   const { setLang } = useI18n();
@@ -81,7 +85,7 @@ function Shell({ me, setMe }: { me: Me; setMe: (me: Me | null) => void }) {
           <NavLink to="/fasting" onClick={closeMenu}>{t.fasting}</NavLink>
           <NavLink to="/settings" onClick={closeMenu}>{t.settings}</NavLink>
           {me.user.isAdmin && <NavLink to="/permissions" onClick={closeMenu}>{t.permissions}</NavLink>}
-          <button type="button" onClick={async () => { await api("/api/auth/logout", { method: "POST" }); setMe(null); }}>{t.logout}</button>
+          <button type="button" onClick={async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); setStoredToken(null); setMe(null); }}>{t.logout}</button>
         </nav>
       </aside>
     </>,
@@ -136,7 +140,34 @@ function AuthPage({ mode, onAuth }: { mode: "login" | "signup"; onAuth: (me: Me)
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [apple, setApple] = useState<AppleConfig | null>(null);
+  const [appleBusy, setAppleBusy] = useState(false);
   const checks = checkSignupPassword(password, confirmPassword);
+
+  useEffect(() => {
+    let active = true;
+    void fetchAppleConfig().then((config) => {
+      if (active) setApple(config);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function continueWithApple() {
+    if (!apple) return;
+    setError("");
+    setAppleBusy(true);
+    try {
+      const me = await signInWithApple(apple, lang);
+      onAuth(me);
+      navigate(me.hasProfile ? "/" : "/setup/fasting");
+    } catch (err) {
+      setError(message(t, err));
+    } finally {
+      setAppleBusy(false);
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -174,6 +205,20 @@ function AuthPage({ mode, onAuth }: { mode: "login" | "signup"; onAuth: (me: Me)
     <main className="shell page">
       <form className="card" onSubmit={submit}>
         <h1>{mode === "login" ? t.login : t.signup}</h1>
+        {apple?.enabled && (
+          <>
+            <button type="button" className="apple-button" onClick={continueWithApple} disabled={appleBusy}>
+              <svg className="apple-logo" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M16.37 12.63c-.02-2.2 1.8-3.26 1.88-3.31-1.02-1.5-2.61-1.7-3.18-1.73-1.35-.14-2.64.8-3.33.8-.69 0-1.75-.78-2.88-.76-1.48.02-2.85.86-3.61 2.19-1.54 2.67-.39 6.63 1.1 8.8.73 1.06 1.6 2.25 2.74 2.21 1.1-.04 1.52-.71 2.85-.71 1.33 0 1.7.71 2.87.69 1.19-.02 1.94-1.08 2.66-2.15.84-1.23 1.19-2.42 1.2-2.48-.03-.01-2.3-.88-2.32-3.5zM14.2 6.17c.6-.74 1.01-1.76.9-2.78-.87.04-1.94.58-2.56 1.31-.55.64-1.04 1.69-.91 2.69.97.07 1.97-.49 2.57-1.22z"
+                />
+              </svg>
+              <span>{t.continueWithApple}</span>
+            </button>
+            <div className="auth-divider" role="separator"><span>{t.orDivider}</span></div>
+          </>
+        )}
         <label><span>{t.email}</span><input name="email" type="email" required /></label>
         <label>
           <span>{t.password}</span>
@@ -254,13 +299,16 @@ function FastingSetup({ onDone }: { onDone: () => void }) {
         </div>
         <div className={wants ? "reveal open" : "reveal"} inert={!wants}>
           <div className="reveal-inner">
-            <label><span>{t.fastingLength}</span>
-              <select value={lengthHours} onChange={(event) => setLengthHours(Number(event.target.value))}>
-                <option value="12">12 {t.hours}</option>
-                <option value="14">14 {t.hours}</option>
-                <option value="16">16 {t.hours}</option>
-              </select>
-            </label>
+            <MenuField
+              label={t.fastingLength}
+              value={String(lengthHours)}
+              onChange={(next) => setLengthHours(Number(next))}
+              options={[
+                { value: "12", label: `12 ${t.hours}` },
+                { value: "14", label: `14 ${t.hours}` },
+                { value: "16", label: `16 ${t.hours}` },
+              ]}
+            />
             <HourField name="startHour" label={t.startHour} value={startHour} onChange={setStartHour} />
             <p className="muted">{t.endHour}: {hourLabel((startHour + lengthHours) % 24)}</p>
           </div>
@@ -279,12 +327,17 @@ function ProfileSetup({ onDone }: { onDone: (me: Me) => void }) {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const dateOfBirth = String(form.get("dateOfBirth") ?? "");
+    if (!dateOfBirth) {
+      setError(t.chooseDate);
+      return;
+    }
     try {
       await api("/api/profile", {
         method: "PUT",
         body: JSON.stringify({
           sex: form.get("sex"),
-          dateOfBirth: form.get("dateOfBirth"),
+          dateOfBirth,
           heightCm: Number(form.get("heightCm")),
           weightKg: Number(form.get("weightKg")),
           activity: form.get("activity"),
@@ -384,11 +437,24 @@ function Today({ canVerifyFoods }: { canVerifyFoods: boolean }) {
               </div>
             </div>
             <div className="hero-side">
+              {day.healthAdjusted && (
+                <>
+                  <div className="pair"><span>{t.healthBaseGoal}</span><b>{day.baseGoalKcal} {t.kcal}</b></div>
+                  <div className="pair"><span>{t.healthActiveKcal}</span><b>+{day.activeKcal} {t.kcal}</b></div>
+                </>
+              )}
               <div className="pair"><span>{t.goal}</span><b>{day.goalKcal} {t.kcal}</b></div>
               <div className="pair"><span>{t.eaten}</span><b>{day.totals.calories} {t.kcal}</b></div>
-              <p className="muted">{over ? t.missed : day.success ? t.success : t.estimate}</p>
+              <p className="muted">{over ? t.missed : day.success ? t.success : day.healthAdjusted ? t.healthEstimate : t.estimate}</p>
             </div>
           </div>
+        </section>
+      )}
+      {day && day.healthSynced && (
+        <section className="card health-card">
+          <h2>{t.appleHealth}</h2>
+          <ProgressRow label={t.healthSteps} value={day.steps} goal={day.stepGoal} unit="" />
+          <ProgressRow label={t.healthExercise} value={day.exerciseMinutes} goal={day.exerciseGoalMinutes} unit={t.healthMinutes} />
         </section>
       )}
       {error && !loggingMeal && <p className="error">{error}</p>}
@@ -462,6 +528,14 @@ function Today({ canVerifyFoods }: { canVerifyFoods: boolean }) {
       })}
     </>
   );
+}
+
+function themeLabel(t: Copy, mode: ThemeMode) {
+  switch (mode) {
+    case "system": return t.themeSystem;
+    case "light": return t.themeLight;
+    case "dark": return t.themeDark;
+  }
 }
 
 function mealLabel(t: Copy, meal: MealCategory) {
@@ -615,6 +689,21 @@ function CalorieRing({ eaten, goal, over }: { eaten: number; goal: number; over:
   );
 }
 
+function ProgressRow({ label, value, goal, unit }: { label: string; value: number; goal: number; unit: string }) {
+  const ratio = goal > 0 ? Math.min(value / goal, 1) : 0;
+  return (
+    <div className="progress-row">
+      <div className="progress-head">
+        <span>{label}</span>
+        <b>{value.toLocaleString()} / {goal.toLocaleString()}{unit ? ` ${unit}` : ""}</b>
+      </div>
+      <div className={ratio >= 1 ? "progress-bar done" : "progress-bar"} role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={goal} aria-valuenow={value}>
+        <i style={{ width: `${ratio * 100}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function WeekPage() {
   const { t } = useI18n();
   const [params, setParams] = useSearchParams();
@@ -626,6 +715,7 @@ function WeekPage() {
     api<WeekResponse>(`/api/weeks${query}`).then(setWeek).catch((err) => setError(message(t, err)));
   }, [on, t]);
   if (!week) return error ? <p className="error">{error}</p> : <p className="muted loading">…</p>;
+  const countedDays = week.days.filter((day) => !day.future && day.calories > 0);
   return (
     <section className="card rise" key={week.sunday}>
       <h1>{t.week}</h1>
@@ -634,16 +724,22 @@ function WeekPage() {
         <button className="secondary" onClick={() => setParams({ on: addDays(week.sunday, 7) })}>{t.nextWeek}</button>
       </div>
       <div className="stats">
-        <div className="stat"><span>{t.calorieIntake}</span><b>{week.calorieIntake}</b></div>
+        <div className="stat"><span>{t.calorieIntake}</span><b>{week.calorieIntake} / {week.goalKcal}</b></div>
         <div className="stat"><span>{t.successCount}</span><b>{week.successCount}</b></div>
         <div className="stat"><span>{t.weightChange}</span><b>{week.weightChangeKg == null ? "—" : week.weightChangeKg}</b></div>
       </div>
       {week.weightChangeKg == null && <p className="muted">{t.noWeightChange}</p>}
-      {week.days.map((day) => (
+      {countedDays.map((day) => (
         <div className="week-day" key={day.day}>
           <span>{day.day}</span>
           <span>{day.calories} / {day.goalKcal}</span>
-          <span>{day.future || !day.success && day.calories === 0 ? t.notYet : day.success ? t.success : t.missed}</span>
+          <span>{day.success ? t.success : t.missed}</span>
+          {day.steps != null && (
+            <span className="week-day-health">
+              {t.healthSteps} {day.steps.toLocaleString()} · {t.healthExercise} {day.exerciseMinutes ?? 0} {t.healthMinutes}
+              {day.activeKcal ? ` · ${t.healthActiveKcal} +${day.activeKcal} ${t.kcal}` : ""}
+            </span>
+          )}
         </div>
       ))}
     </section>
@@ -691,7 +787,13 @@ function WeightPage() {
       <section className="card">
         {weights.length === 0 ? <p className="muted">{t.graphEmpty}</p> : <WeightGraph weights={weights} />}
         {weights.map((point) => (
-          <div className="entry" key={point.id}><span>{formatJerusalem(point.loggedAt)}</span><strong>{point.weightKg}</strong></div>
+          <div className="entry" key={point.id}>
+            <span>
+              {formatJerusalem(point.loggedAt)}
+              <span className="source-chip">{point.source === "health" ? t.healthSource : t.manualSource}</span>
+            </span>
+            <strong>{point.weightKg}</strong>
+          </div>
         ))}
       </section>
     </>
@@ -707,24 +809,25 @@ function WeightGraph({ weights }: { weights: WeightPoint[] }) {
   const maxV = Math.max(...values);
   const width = 640;
   const height = 220;
-  const points = weights.map((point) => {
+  const plotted = weights.map((point) => {
     const x = maxT === minT ? width / 2 : ((new Date(point.loggedAt).getTime() - minT) / (maxT - minT)) * (width - 24) + 12;
     const y = maxV === minV ? height / 2 : height - 16 - ((point.weightKg - minV) / (maxV - minV)) * (height - 32);
-    return `${x},${y}`;
-  }).join(" ");
+    return { id: point.id, x, y, source: point.source };
+  });
+  const points = plotted.map((point) => `${point.x},${point.y}`).join(" ");
   return (
     <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img">
-      <polyline className="graph-line" pathLength={1} fill="none" stroke="#e07a2f" strokeWidth="3" points={points} />
-      {points.split(" ").map((pair) => {
-        const [x, y] = pair.split(",");
-        return <circle className="graph-dot" key={pair} cx={x} cy={y} r="4" fill="#e07a2f" />;
-      })}
+      <polyline className="graph-line" pathLength={1} fill="none" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points} />
+      {plotted.map((point) => (
+        <circle className={point.source === "health" ? "graph-dot health" : "graph-dot"} key={point.id} cx={point.x} cy={point.y} r="4" />
+      ))}
     </svg>
   );
 }
 
 function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
   const { t, setLang } = useI18n();
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [fasting, setFasting] = useState<FastingState | null>(null);
   const [autoPublish, setAutoPublish] = useState(me.user.autoPublishFoods);
@@ -733,8 +836,10 @@ function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordStatus, setPasswordStatus] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [health, setHealth] = useState<AppleHealthState | null>(null);
   const [error, setError] = useState("");
   const pwChecks = checkSignupPassword(newPassword, confirmPassword);
+  const canReadHealth = me.permissions.includes("appleHealth:read");
   useEffect(() => {
     Promise.all([
       api<{ profile: Profile }>("/api/profile"),
@@ -744,21 +849,48 @@ function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
       setFasting(fastingResponse);
     }).catch((err) => setError(message(t, err)));
   }, [t]);
+  useEffect(() => {
+    if (!canReadHealth) return;
+    api<AppleHealthState>("/api/apple-health").then(setHealth).catch(() => setHealth(null));
+  }, [canReadHealth]);
+  async function saveHealth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      const next = await api<AppleHealthState>("/api/apple-health/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          exerciseGoalMinutes: Number(form.get("exerciseGoalMinutes")),
+          stepGoal: Number(form.get("stepGoal")),
+        }),
+      });
+      setHealth(next);
+      setError("");
+    } catch (err) {
+      setError(message(t, err));
+    }
+  }
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const dateOfBirth = String(form.get("dateOfBirth") ?? "");
+    if (!dateOfBirth) {
+      setError(t.chooseDate);
+      return;
+    }
     try {
       await api("/api/profile", {
         method: "PUT",
         body: JSON.stringify({
           sex: form.get("sex"),
-          dateOfBirth: form.get("dateOfBirth"),
+          dateOfBirth,
           heightCm: Number(form.get("heightCm")),
           weightKg: Number(form.get("weightKg")),
           activity: form.get("activity"),
           weeklyPace: form.get("weeklyPace"),
         }),
       });
+      setError("");
     } catch (err) {
       setError(message(t, err));
     }
@@ -807,22 +939,34 @@ function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
     <>
       <section className="card">
         <h1>{t.settings}</h1>
-        <label><span>{t.language}</span>
-          <select value={me.user.language} onChange={(event) => saveLanguage(event.target.value as Lang)}>
-            <option value="en">{t.english}</option>
-            <option value="he">{t.hebrew}</option>
-          </select>
-        </label>
+        <MenuField
+          label={t.language}
+          value={me.user.language}
+          onChange={(next) => saveLanguage(next as Lang)}
+          options={[
+            { value: "en", label: t.english },
+            { value: "he", label: t.hebrew },
+          ]}
+        />
+        <div className="label">{t.appearance}</div>
+        <div className="segmented" role="group" aria-label={t.appearance}>
+          {THEME_MODES.map((option) => (
+            <button key={option} type="button" aria-pressed={themeMode === option} onClick={() => setThemeMode(option)}>
+              {themeLabel(t, option)}
+            </button>
+          ))}
+        </div>
         <label>
           <input type="checkbox" checked={autoPublish} onChange={async (event) => {
             const next = event.target.checked;
             setAutoPublish(next);
             await api("/api/profile/settings", { method: "PUT", body: JSON.stringify({ autoPublishFoods: next, language: me.user.language }) });
             setMe({ ...me, user: { ...me.user, autoPublishFoods: next } });
-          }} style={{ width: "auto", marginInlineEnd: "0.5rem" }} />
+          }} />
           {t.autoPublish}
         </label>
       </section>
+      {me.hasPassword && (
       <form className="card" onSubmit={savePassword}>
         <h2>{t.changePassword}</h2>
         <label>
@@ -866,27 +1010,54 @@ function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
           </ul>
         </div>
         {passwordError && <p className="error">{passwordError}</p>}
-        {passwordStatus && <p className="rise" style={{ color: "#8fd9a8" }}>{passwordStatus}</p>}
+        {passwordStatus && <p className="rise success-text">{passwordStatus}</p>}
         <button type="submit" disabled={!currentPassword || !pwChecks.valid}>{t.save}</button>
       </form>
+      )}
       {profile && (
         <form className="card" onSubmit={saveProfile} key={profile.dateOfBirth}>
           <h2>{t.profileTitle}</h2>
           <ProfileFields profile={profile} />
+          {health?.connected && <p className="muted">{t.healthActivityNote}</p>}
           <button type="submit">{t.save}</button>
+        </form>
+      )}
+      {health && (
+        <form className="card health-card" onSubmit={saveHealth} key={`${health.stepGoal}-${health.exerciseGoalMinutes}-${health.connected}`}>
+          <h2>{t.appleHealth}</h2>
+          <div className="health-status"><span>{health.connected ? t.healthConnected : t.healthNotConnected}</span></div>
+          <div className="health-status">
+            <span>{t.healthLastSync}</span>
+            <b>{health.lastSyncedAt ? formatJerusalem(health.lastSyncedAt) : t.healthNever}</b>
+          </div>
+          {!health.connected && <p className="muted">{t.healthWebOnly}</p>}
+          {(health.connected || health.lastSyncedAt) && (
+            <>
+              <label><span>{t.healthStepGoal}</span>
+                <input name="stepGoal" type="number" inputMode="numeric" min={100} max={200000} step={100} defaultValue={health.stepGoal} required />
+              </label>
+              <label><span>{t.healthExerciseGoal}</span>
+                <input name="exerciseGoalMinutes" type="number" inputMode="numeric" min={1} max={1440} defaultValue={health.exerciseGoalMinutes} required />
+              </label>
+              <button type="submit" disabled={!me.permissions.includes("appleHealth:sync")}>{t.save}</button>
+            </>
+          )}
         </form>
       )}
       {fasting && (
         <form className="card" onSubmit={saveFasting} key={`${fasting.enabled}-${fasting.lengthHours}-${fasting.startHour}`}>
           <h2>{t.fasting}</h2>
-          <label><input name="enabled" type="checkbox" defaultChecked={fasting.enabled} style={{ width: "auto", marginInlineEnd: "0.5rem" }} />{t.fastingOn}</label>
-          <label><span>{t.fastingLength}</span>
-            <select name="lengthHours" defaultValue={String(fasting.lengthHours)}>
-              <option value="12">12</option>
-              <option value="14">14</option>
-              <option value="16">16</option>
-            </select>
-          </label>
+          <label><input name="enabled" type="checkbox" defaultChecked={fasting.enabled} />{t.fastingOn}</label>
+          <MenuField
+            name="lengthHours"
+            label={t.fastingLength}
+            defaultValue={String(fasting.lengthHours)}
+            options={[
+              { value: "12", label: `12 ${t.hours}` },
+              { value: "14", label: `14 ${t.hours}` },
+              { value: "16", label: `16 ${t.hours}` },
+            ]}
+          />
           <HourField name="startHour" label={t.startHour} defaultValue={fasting.startHour} />
           <p className="muted">{t.endHour}: {hourLabel(fasting.endHour)}</p>
           <button type="submit">{t.save}</button>
@@ -944,7 +1115,6 @@ function PermissionsPage() {
                   type="checkbox"
                   checked={permissions[op] ?? false}
                   onChange={(event) => toggleOperation(op, event.target.checked)}
-                  style={{ width: "auto" }}
                 />
               </div>
             );
@@ -971,19 +1141,19 @@ function FoodForm() {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const body = {
-      barcode: String(form.get("barcode") ?? barcode),
-      name: form.get("name"),
-      basis: form.get("basis"),
-      calories: Number(form.get("calories")),
-      protein: Number(form.get("protein")),
-      carbohydrates: Number(form.get("carbohydrates")),
-      fat: Number(form.get("fat")),
-      fiber: Number(form.get("fiber")),
-      sugars: Number(form.get("sugars")),
-      sodium: Number(form.get("sodium")),
-    };
     try {
+      const body = {
+        barcode: String(form.get("barcode") ?? barcode),
+        name: form.get("name"),
+        basis: form.get("basis"),
+        calories: readNutrient(form.get("calories")),
+        protein: readNutrient(form.get("protein")),
+        carbohydrates: readNutrient(form.get("carbohydrates")),
+        fat: readNutrient(form.get("fat")),
+        fiber: readNutrient(form.get("fiber")),
+        sugars: readNutrient(form.get("sugars")),
+        sodium: readNutrient(form.get("sodium")),
+      };
       if (id) {
         const { name, basis, calories, protein, carbohydrates, fat, fiber, sugars, sodium } = body;
         await api(`/api/foods/${id}`, { method: "PUT", body: JSON.stringify({ name, basis, calories, protein, carbohydrates, fat, fiber, sugars, sodium }) });
@@ -1000,19 +1170,22 @@ function FoodForm() {
       <h1>{t.createFood}</h1>
       {!id && <label><span>{t.barcode}</span><input name="barcode" defaultValue={barcode} required /></label>}
       <label><span>{t.name}</span><input name="name" defaultValue={food?.name} required /></label>
-      <label><span>{t.solid}</span>
-        <select name="basis" defaultValue={food?.basis ?? "solid"}>
-          <option value="solid">{t.solid}</option>
-          <option value="liquid">{t.liquid}</option>
-        </select>
-      </label>
+      <MenuField
+        name="basis"
+        label={t.solid}
+        defaultValue={food?.basis ?? "solid"}
+        options={[
+          { value: "solid", label: t.solid },
+          { value: "liquid", label: t.liquid },
+        ]}
+      />
       {(["calories", "protein", "carbohydrates", "fat", "fiber", "sugars", "sodium"] as const).map((field) => (
-        <label key={field}><span>{t[field]}</span><input name={field} defaultValue={food?.[field] ?? 0} inputMode="decimal" required /></label>
+        <label key={field}><span>{t[field]}</span><input name={field} defaultValue={food?.[field] ?? 0} inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
       ))}
       {error && <p className="error">{error}</p>}
       <button type="submit">{t.save}</button>
       {id && food?.owned && (
-        <button type="button" className="secondary" style={{ marginInlineStart: "0.5rem" }} onClick={async () => {
+        <button type="button" className="secondary" onClick={async () => {
           await api(`/api/foods/${id}/${food.published ? "unpublish" : "publish"}`, { method: "POST" });
           setFood({ ...food, published: !food.published });
         }}>{food.published ? t.unpublish : t.publish}</button>
@@ -1025,48 +1198,61 @@ function ProfileFields({ profile }: { profile?: Profile }) {
   const { t } = useI18n();
   return (
     <>
-      <label><span>{t.sex}</span>
-        <select name="sex" defaultValue={profile?.sex ?? "female"}>
-          <option value="female">{t.female}</option>
-          <option value="male">{t.male}</option>
-        </select>
-      </label>
-      <label><span>{t.dateOfBirth}</span><input name="dateOfBirth" type="date" defaultValue={profile?.dateOfBirth} required /></label>
+      <MenuField
+        name="sex"
+        label={t.sex}
+        defaultValue={profile?.sex ?? "female"}
+        options={[
+          { value: "female", label: t.female },
+          { value: "male", label: t.male },
+        ]}
+      />
+      <DateField name="dateOfBirth" label={t.dateOfBirth} defaultValue={profile?.dateOfBirth} />
       <label><span>{t.height}</span><input name="heightCm" inputMode="decimal" defaultValue={profile?.heightCm} required /></label>
       <label><span>{t.weightKg}</span><input name="weightKg" inputMode="decimal" defaultValue={profile?.weightKg} required /></label>
-      <label><span>{t.activity}</span>
-        <select name="activity" defaultValue={profile?.activity ?? "sedentary"}>
-          <option value="sedentary">{t.sedentary}</option>
-          <option value="light">{t.light}</option>
-          <option value="moderate">{t.moderate}</option>
-          <option value="very">{t.very}</option>
-          <option value="extra">{t.extra}</option>
-        </select>
-      </label>
-      <label><span>{t.pace}</span>
-        <select name="weeklyPace" defaultValue={profile?.weeklyPace ?? "kg050"}>
-          <option value="kg025">{t.pace025}</option>
-          <option value="kg050">{t.pace050}</option>
-          <option value="kg100">{t.pace100}</option>
-        </select>
-      </label>
+      <MenuField
+        name="activity"
+        label={t.activity}
+        defaultValue={profile?.activity ?? "sedentary"}
+        options={[
+          { value: "sedentary", label: t.sedentary },
+          { value: "light", label: t.light },
+          { value: "moderate", label: t.moderate },
+          { value: "very", label: t.very },
+          { value: "extra", label: t.extra },
+        ]}
+      />
+      <MenuField
+        name="weeklyPace"
+        label={t.pace}
+        defaultValue={profile?.weeklyPace ?? "kg050"}
+        options={[
+          { value: "kg025", label: t.pace025 },
+          { value: "kg050", label: t.pace050 },
+          { value: "kg100", label: t.pace100 },
+        ]}
+      />
     </>
   );
 }
 
 function HourField({ name, label, defaultValue, value, onChange }: { name: string; label: string; defaultValue?: number; value?: number; onChange?: (hour: number) => void }) {
   return (
-    <label><span>{label}</span>
-      <select
-        name={name}
-        defaultValue={value == null ? String(defaultValue ?? 0) : undefined}
-        value={value == null ? undefined : String(value)}
-        onChange={onChange ? (event) => onChange(Number(event.target.value)) : undefined}
-      >
-        {Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{hourLabel(hour)}</option>)}
-      </select>
-    </label>
+    <MenuField
+      name={name}
+      label={label}
+      options={Array.from({ length: 24 }, (_, hour) => ({ value: String(hour), label: hourLabel(hour) }))}
+      value={value == null ? undefined : String(value)}
+      defaultValue={value == null ? String(defaultValue ?? 0) : undefined}
+      onChange={onChange ? (next) => onChange(Number(next)) : undefined}
+    />
   );
+}
+
+function readNutrient(value: FormDataEntryValue | null): number {
+  const raw = String(value ?? "").trim().replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(raw)) throw new ApiError("invalid_body");
+  return Number(raw);
 }
 
 function AnimatedNumber({ value, from }: { value: number; from: number }) {

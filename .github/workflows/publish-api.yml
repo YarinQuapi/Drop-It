@@ -1,0 +1,111 @@
+# Publishes the API to api-dropit.yarinlevi.dev.
+# Repository secrets: DROPIT_SSH_KEY (private key) and DROPIT_SSH_PASSPHRASE.
+
+name: Publish API
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "apps/api/**"
+      - "apps/web/package.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/publish-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-api
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure SSH
+        env:
+          DROPIT_SSH_KEY: ${{ secrets.DROPIT_SSH_KEY }}
+          DROPIT_SSH_PASSPHRASE: ${{ secrets.DROPIT_SSH_PASSPHRASE }}
+        run: |
+          if [ -z "$DROPIT_SSH_KEY" ] || [ -z "$DROPIT_SSH_PASSPHRASE" ]; then
+            echo "Add DROPIT_SSH_KEY and DROPIT_SSH_PASSPHRASE repository secrets." >&2
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DROPIT_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub
+          printf '%s\n' '#!/bin/sh' 'printf "%s" "$DROPIT_SSH_PASSPHRASE"' > ~/.ssh/askpass.sh
+          chmod 700 ~/.ssh/askpass.sh
+          eval "$(ssh-agent -s)"
+          printf '%s\n' "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          SSH_ASKPASS="$HOME/.ssh/askpass.sh" SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/id_ed25519
+          printf '%s\n' '188.245.71.112 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOhKRs5E1kRLnbrK3j109ANsj5SMlh2i+GqiZ0dZbKaM' >> ~/.ssh/known_hosts
+          printf '%s\n' \
+            'Host dropit-prod' \
+            '  HostName 188.245.71.112' \
+            '  User root' \
+            '  IdentityFile ~/.ssh/id_ed25519.pub' \
+            '  IdentitiesOnly yes' \
+            >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Sync API
+        run: |
+          ssh dropit-prod 'mkdir -p /opt/dropit-api/apps/api /opt/dropit-api/apps/web'
+          rsync -az \
+            package.json package-lock.json \
+            dropit-prod:/opt/dropit-api/
+          rsync -az \
+            apps/web/package.json \
+            dropit-prod:/opt/dropit-api/apps/web/package.json
+          rsync -az --delete \
+            --exclude node_modules \
+            --exclude generated \
+            --exclude .env \
+            apps/api/ \
+            dropit-prod:/opt/dropit-api/apps/api/
+
+      - name: Install, migrate, and restart
+        run: |
+          ssh dropit-prod bash -s <<'EOF'
+          set -euo pipefail
+          test -f /opt/dropit-api/apps/api/.env
+          cd /opt/dropit-api
+          npm ci --omit=optional
+          cd apps/api
+          npx prisma generate --config prisma7.config.ts
+          npx prisma migrate deploy --config prisma7.config.ts
+          pm2 restart dropit-api
+          for _ in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:4000/api/health; then
+              echo
+              exit 0
+            fi
+            sleep 1
+          done
+          pm2 logs dropit-api --lines 50 --nostream || true
+          exit 1
+          EOF
+
+      - name: Check public health
+        run: curl -fsS https://api-dropit.yarinlevi.dev/api/health

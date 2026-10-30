@@ -1,10 +1,11 @@
 import argon2 from "argon2";
-import { Router } from "express";
+import { Router, type Response } from "express";
+import { appleConfig, resolveAppleUser, verifyAppleToken } from "../apple.js";
 import { currentUser, hashToken, newSessionToken, readToken, requireUser, sessionCookieName } from "../auth.js";
 import { prisma } from "../db.js";
 import { asyncRoute, HttpError } from "../http.js";
 import { getAllowedOperations } from "../rbac.js";
-import { changePasswordSchema, loginSchema, signupSchema } from "../schemas.js";
+import { appleSignInSchema, changePasswordSchema, loginSchema, signupSchema } from "../schemas.js";
 
 export const authRouter = Router();
 
@@ -24,6 +25,20 @@ function publicUser(user: {
   };
 }
 
+async function issueSession(
+  res: Response,
+  user: Parameters<typeof publicUser>[0],
+  status = 200,
+): Promise<void> {
+  const session = newSessionToken();
+  await prisma.session.create({
+    data: { userId: user.id, tokenHash: session.tokenHash, expiresAt: session.expiresAt },
+  });
+  const permissions = await getAllowedOperations(user.isAdmin);
+  res.cookie(sessionCookieName(), session.token, cookieOptions(session.expiresAt));
+  res.status(status).json({ token: session.token, user: publicUser(user), permissions });
+}
+
 authRouter.post(
   "/signup",
   asyncRoute(async (req, res) => {
@@ -41,17 +56,7 @@ authRouter.post(
         fastingTimer: { create: {} },
       },
     });
-    const session = newSessionToken();
-    await prisma.session.create({
-      data: { userId: user.id, tokenHash: session.tokenHash, expiresAt: session.expiresAt },
-    });
-    const permissions = await getAllowedOperations(user.isAdmin);
-    res.cookie(sessionCookieName(), session.token, cookieOptions(session.expiresAt));
-    res.status(201).json({
-      token: session.token,
-      user: publicUser(user),
-      permissions,
-    });
+    await issueSession(res, user, 201);
   }),
 );
 
@@ -60,16 +65,38 @@ authRouter.post(
   asyncRoute(async (req, res) => {
     const body = loginSchema.parse(req.body);
     const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-    if (!user || !(await argon2.verify(user.passwordHash, body.password))) {
+    if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, body.password))) {
       throw new HttpError(401, "invalid_login");
     }
-    const session = newSessionToken();
-    await prisma.session.create({
-      data: { userId: user.id, tokenHash: session.tokenHash, expiresAt: session.expiresAt },
+    await issueSession(res, user);
+  }),
+);
+
+authRouter.get("/apple/config", (_req, res) => {
+  res.json(appleConfig());
+});
+
+authRouter.post(
+  "/apple",
+  asyncRoute(async (req, res) => {
+    const body = appleSignInSchema.parse(req.body);
+    const identity = await verifyAppleToken(body.identityToken, body.nonce);
+    const { user, created } = await resolveAppleUser(identity, {
+      findBySub: (sub) => prisma.user.findUnique({ where: { appleSub: sub } }),
+      findByEmail: (email) => prisma.user.findUnique({ where: { email } }),
+      linkSub: (userId, sub) => prisma.user.update({ where: { id: userId }, data: { appleSub: sub } }),
+      create: (email) =>
+        prisma.user.create({
+          data: {
+            email,
+            appleSub: identity.sub,
+            language: body.language ?? "en",
+            fastingSettings: { create: {} },
+            fastingTimer: { create: {} },
+          },
+        }),
     });
-    const permissions = await getAllowedOperations(user.isAdmin);
-    res.cookie(sessionCookieName(), session.token, cookieOptions(session.expiresAt));
-    res.json({ token: session.token, user: publicUser(user), permissions });
+    await issueSession(res, user, created ? 201 : 200);
   }),
 );
 
@@ -94,14 +121,16 @@ authRouter.get(
   requireUser,
   asyncRoute(async (_req, res) => {
     const user = currentUser(res);
-    const [profile, fasting, permissions] = await Promise.all([
+    const [profile, fasting, record, permissions] = await Promise.all([
       prisma.profile.findUnique({ where: { userId: user.id } }),
       prisma.fastingSettings.findUnique({ where: { userId: user.id } }),
+      prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { passwordHash: true } }),
       getAllowedOperations(user.isAdmin),
     ]);
     res.json({
       user,
       hasProfile: profile != null,
+      hasPassword: record.passwordHash != null,
       fastingEnabled: fasting?.enabled ?? false,
       permissions,
     });
@@ -115,6 +144,7 @@ authRouter.put(
     const user = currentUser(res);
     const body = changePasswordSchema.parse(req.body);
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    if (!record.passwordHash) throw new HttpError(400, "no_password");
     if (!(await argon2.verify(record.passwordHash, body.currentPassword))) {
       throw new HttpError(400, "wrong_password");
     }

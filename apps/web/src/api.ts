@@ -1,15 +1,48 @@
+const TOKEN_KEY = "dropit_token";
+
 export class ApiError extends Error {
-  constructor(public code: string) {
+  constructor(
+    public code: string,
+    public status?: number,
+  ) {
     super(code);
   }
+}
+
+export function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  } catch {}
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const token = getStoredToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   const response = await fetch(path, { ...init, headers, credentials: "include" });
-  const data = (await response.json().catch(() => ({}))) as { error?: string };
-  if (!response.ok) throw new ApiError(data.error ?? "server_error");
+  const data = (await response.json().catch(() => ({}))) as { error?: string; token?: string };
+  if (!response.ok) {
+    if (response.status === 401) setStoredToken(null);
+    throw new ApiError(data.error ?? "server_error", response.status);
+  }
+  if (typeof data.token === "string" && data.token.length > 0) {
+    setStoredToken(data.token);
+  }
   return data as T;
 }
 
@@ -50,7 +83,9 @@ export type Operation =
   | "weights:create"
   | "fasting:read"
   | "fasting:update"
-  | "fasting:timer";
+  | "fasting:timer"
+  | "appleHealth:read"
+  | "appleHealth:sync";
 
 export const OPERATIONS: Operation[] = [
   "profile:read",
@@ -70,11 +105,14 @@ export const OPERATIONS: Operation[] = [
   "fasting:read",
   "fasting:update",
   "fasting:timer",
+  "appleHealth:read",
+  "appleHealth:sync",
 ];
 
 export type Me = {
   user: { id: string; email: string; language: "en" | "he"; isAdmin: boolean; autoPublishFoods: boolean };
   hasProfile: boolean;
+  hasPassword: boolean;
   fastingEnabled: boolean;
   permissions: Operation[];
 };
@@ -108,7 +146,16 @@ export type DayEntry = Nutrients & {
 
 export type DayResponse = {
   day: string;
+  /** Effective food budget: the base plus Apple active kcal when healthAdjusted. */
   goalKcal: number;
+  baseGoalKcal: number;
+  activeKcal: number;
+  healthAdjusted: boolean;
+  healthSynced: boolean;
+  steps: number;
+  stepGoal: number;
+  exerciseMinutes: number;
+  exerciseGoalMinutes: number;
   entries: DayEntry[];
   totals: Nutrients;
   success: boolean;
@@ -117,13 +164,35 @@ export type DayResponse = {
 
 export type WeekResponse = {
   sunday: string;
+  goalKcal: number;
+  activeKcal: number;
+  healthSynced: boolean;
+  stepGoal: number;
+  exerciseGoalMinutes: number;
   calorieIntake: number;
   successCount: number;
   weightChangeKg: number | null;
-  days: { day: string; goalKcal: number; calories: number; success: boolean; future: boolean }[];
+  days: {
+    day: string;
+    goalKcal: number;
+    calories: number;
+    success: boolean;
+    future: boolean;
+    steps?: number | null;
+    exerciseMinutes?: number | null;
+    activeKcal?: number;
+  }[];
 };
 
-export type WeightPoint = { id: string; weightKg: number; loggedAt: string };
+export type WeightPoint = { id: string; weightKg: number; loggedAt: string; source: "manual" | "health" };
+
+export type AppleHealthState = {
+  connected: boolean;
+  connectedOn: string | null;
+  lastSyncedAt: string | null;
+  exerciseGoalMinutes: number;
+  stepGoal: number;
+};
 
 export type FastingSession = {
   id: string;

@@ -21,6 +21,8 @@ export const OPERATIONS = [
   "fasting:read",
   "fasting:update",
   "fasting:timer",
+  "appleHealth:read",
+  "appleHealth:sync",
 ] as const;
 
 export type Operation = (typeof OPERATIONS)[number];
@@ -43,6 +45,8 @@ export const DEFAULT_USER_PERMISSIONS: Record<Operation, boolean> = {
   "fasting:read": true,
   "fasting:update": true,
   "fasting:timer": true,
+  "appleHealth:read": true,
+  "appleHealth:sync": true,
 };
 
 export function resolvePermissions(

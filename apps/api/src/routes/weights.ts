@@ -23,6 +23,7 @@ weightsRouter.get(
         id: entry.id,
         weightKg: num(entry.weightKg),
         loggedAt: entry.loggedAt.toISOString(),
+        source: entry.source,
       })),
     });
   }),
@@ -46,6 +47,7 @@ weightsRouter.post(
         id: entry.id,
         weightKg: num(entry.weightKg),
         loggedAt: entry.loggedAt.toISOString(),
+        source: entry.source,
       },
     });
   }),

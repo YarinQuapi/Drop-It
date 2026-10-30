@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { approximateEndHour, calorieGoal, checkPassword, daySucceeded, fastDurationMinutes, fastEndsAt, resolveBarcode, scaleNutrients, validatePassword, weightChangeKg, weightForGoal } from "./domain.js";
+import { approximateEndHour, calorieGoal, checkPassword, daySucceeded, effectiveGoalKcal, fastDurationMinutes, fastEndsAt, resolveBarcode, scaleNutrients, summarizeWeekDays, usesHealthBase, validatePassword, weightChangeKg, weightForGoal } from "./domain.js";
 import { DEFAULT_USER_PERMISSIONS, OPERATIONS, resolvePermissions } from "./rbac.js";
-import { changePasswordSchema, signupSchema } from "./schemas.js";
-import { addDays, ageOn, firstOfMonth, jerusalemMidnight, jerusalemParts, sundayOf, todayJerusalem } from "./time.js";
+import { changePasswordSchema, foodSchema, healthSettingsSchema, healthSyncSchema, profileSchema, signupSchema } from "./schemas.js";
+import { addDays, ageOn, canonicalDay, firstOfMonth, jerusalemMidnight, jerusalemParts, sundayOf, todayJerusalem } from "./time.js";
 
 test("mifflin goal uses activity, deficit, floor, then nearest kcal", () => {
   assert.equal(
@@ -40,6 +40,53 @@ test("mifflin goal uses activity, deficit, floor, then nearest kcal", () => {
       pace: "kg100",
     }),
     800,
+  );
+});
+
+test("food nutrients keep fractional grams", () => {
+  const food = foodSchema.parse({
+    barcode: "7290000000000",
+    name: "Yogurt",
+    basis: "solid",
+    calories: 61,
+    protein: 6.7,
+    carbohydrates: 4.5,
+    fat: 1.25,
+    fiber: 0,
+    sugars: 4.5,
+    sodium: 36.2,
+  });
+  assert.equal(food.protein, 6.7);
+  assert.equal(food.fat, 1.25);
+  assert.equal(food.sodium, 36.2);
+});
+
+test("dates accept slash or dot separators and reject impossible days", () => {
+  assert.equal(canonicalDay("1990-10-06"), "1990-10-06");
+  assert.equal(canonicalDay("1990/10/6"), "1990-10-06");
+  assert.equal(canonicalDay("1990.2.6"), "1990-02-06");
+  assert.equal(canonicalDay("1990-02-31"), null);
+  assert.equal(canonicalDay("06/10/1990"), null);
+
+  const profile = profileSchema.parse({
+    sex: "female",
+    dateOfBirth: "1990/10/06",
+    heightCm: 165.5,
+    weightKg: 60.25,
+    activity: "light",
+    weeklyPace: "kg050",
+  });
+  assert.equal(profile.dateOfBirth, "1990-10-06");
+  assert.equal(
+    profileSchema.safeParse({
+      sex: "female",
+      dateOfBirth: "1990-02-31",
+      heightCm: 165,
+      weightKg: 60,
+      activity: "light",
+      weeklyPace: "kg050",
+    }).success,
+    false,
   );
 });
 
@@ -108,6 +155,19 @@ test("a day succeeds only when food was logged and calories are at or under the 
   assert.equal(daySucceeded({ entryCount: 1, calories: 1800, goalKcal: 1800, future: false }), true);
   assert.equal(daySucceeded({ entryCount: 1, calories: 1801, goalKcal: 1800, future: false }), false);
   assert.equal(daySucceeded({ entryCount: 1, calories: 100, goalKcal: 1800, future: true }), false);
+});
+
+test("weekly summary counts unlogged days toward overall goalKcal but excludes them from listed days", () => {
+  const summary = summarizeWeekDays([
+    { day: "2026-10-25", goalKcal: 1800, calories: 1650, entryCount: 3, success: true, future: false },
+    { day: "2026-10-26", goalKcal: 1800, calories: 0, entryCount: 0, success: false, future: false },
+    { day: "2026-10-27", goalKcal: 1800, calories: 1900, entryCount: 4, success: false, future: false },
+    { day: "2026-10-28", goalKcal: 1800, calories: 0, entryCount: 0, success: false, future: true },
+  ]);
+  assert.equal(summary.goalKcal, 7200);
+  assert.equal(summary.calorieIntake, 3550);
+  assert.equal(summary.successCount, 1);
+  assert.deepEqual(summary.days.map((d) => d.day), ["2026-10-25", "2026-10-27"]);
 });
 
 test("barcode lookup prefers the user's own food, then the verified food, then the list", () => {
@@ -209,7 +269,9 @@ test("password validation requires 8+ English chars, uppercase, number, symbol, 
 });
 
 test("RBAC permission resolution grants all to admins and applies overrides to regular users", () => {
-  assert.equal(OPERATIONS.length, 17);
+  assert.equal(OPERATIONS.length, 19);
+  assert.equal(DEFAULT_USER_PERMISSIONS["appleHealth:read"], true);
+  assert.equal(DEFAULT_USER_PERMISSIONS["appleHealth:sync"], true);
   const adminPerms = resolvePermissions(true, [{ operation: "foods:create", allowed: false }]);
   for (const op of OPERATIONS) {
     assert.equal(adminPerms[op], true);
@@ -228,3 +290,66 @@ test("RBAC permission resolution grants all to admins and applies overrides to r
 });
 
 
+
+test("Apple Health replaces the activity multiplier from the connection day through today", () => {
+  const connected = { connected: true, connectedOn: "2026-10-28", today: "2026-10-30" };
+  assert.equal(usesHealthBase({ ...connected, day: "2026-10-27" }), false);
+  assert.equal(usesHealthBase({ ...connected, day: "2026-10-28" }), true);
+  assert.equal(usesHealthBase({ ...connected, day: "2026-10-30" }), true);
+  assert.equal(usesHealthBase({ ...connected, day: "2026-10-31" }), false);
+  assert.equal(usesHealthBase({ ...connected, connected: false, day: "2026-10-30" }), false);
+  assert.equal(usesHealthBase({ ...connected, connectedOn: null, day: "2026-10-30" }), false);
+});
+
+test("health-adjusted goal is the sedentary base plus active kcal, never the activity level twice", () => {
+  const person = { sex: "male", weightKg: 80, heightCm: 180, age: 30, pace: "kg050" } as const;
+  const sedentary = calorieGoal({ ...person, activity: "sedentary" });
+  const moderate = calorieGoal({ ...person, activity: "moderate" });
+  assert.equal(sedentary, 1586);
+  assert.equal(effectiveGoalKcal(sedentary, 420, true), 2006);
+  assert.ok(effectiveGoalKcal(sedentary, 420, true) < moderate + 420);
+  assert.equal(effectiveGoalKcal(sedentary, 420, false), 1586);
+  assert.equal(effectiveGoalKcal(sedentary, -50, true), 1586);
+  assert.equal(effectiveGoalKcal(sedentary, 99.6, true), 1686);
+});
+
+test("the 800 kcal floor applies to the sedentary base before active kcal is added", () => {
+  const base = calorieGoal({ sex: "female", weightKg: 40, heightCm: 150, age: 60, activity: "sedentary", pace: "kg100" });
+  assert.equal(base, 800);
+  assert.equal(effectiveGoalKcal(base, 300, true), 1100);
+});
+
+test("a health-adjusted day succeeds against the effective goal", () => {
+  const goalKcal = effectiveGoalKcal(1600, 400, true);
+  assert.equal(daySucceeded({ entryCount: 2, calories: 1950, goalKcal, future: false }), true);
+  assert.equal(daySucceeded({ entryCount: 2, calories: 2001, goalKcal, future: false }), false);
+  assert.equal(daySucceeded({ entryCount: 0, calories: 0, goalKcal, future: false }), false);
+});
+
+test("weekly totals sum effective goals and carry steps and exercise on listed days", () => {
+  const summary = summarizeWeekDays([
+    { day: "2026-10-25", goalKcal: 2000, calories: 1900, entryCount: 3, success: true, future: false, steps: 9000, exerciseMinutes: 35, activeKcal: 400 },
+    { day: "2026-10-26", goalKcal: 1700, calories: 0, entryCount: 0, success: false, future: false, steps: null, exerciseMinutes: null, activeKcal: 0 },
+    { day: "2026-10-27", goalKcal: 1600, calories: 1700, entryCount: 2, success: false, future: false },
+  ]);
+  assert.equal(summary.goalKcal, 5300);
+  assert.equal(summary.activeKcal, 400);
+  assert.equal(summary.successCount, 1);
+  assert.deepEqual(summary.days.map((d) => [d.day, d.steps ?? null]), [["2026-10-25", 9000], ["2026-10-27", null]]);
+});
+
+test("Apple Health sync payloads are validated and default to empty lists", () => {
+  const empty = healthSyncSchema.parse({});
+  assert.deepEqual(empty, { weights: [], deletedWeightIds: [], days: [] });
+  const ok = healthSyncSchema.safeParse({
+    weights: [{ externalId: "9B2C1E0A-5A6B-4C55-9E0A-111111111111", weightKg: 81.25, loggedAt: "2026-10-30T07:15:00.000Z" }],
+    deletedWeightIds: ["9B2C1E0A-5A6B-4C55-9E0A-222222222222"],
+    days: [{ day: "2026-10-30", steps: 8123, exerciseMinutes: 32, activeKcal: 410 }],
+  });
+  assert.equal(ok.success, true);
+  assert.equal(healthSyncSchema.safeParse({ weights: [{ externalId: "x", weightKg: 0, loggedAt: "2026-10-30T07:15:00.000Z" }] }).success, false);
+  assert.equal(healthSyncSchema.safeParse({ weights: [{ externalId: "x", weightKg: 80, loggedAt: "yesterday" }] }).success, false);
+  assert.equal(healthSyncSchema.safeParse({ days: [{ day: "2026-10-30", steps: -1, exerciseMinutes: 0, activeKcal: 0 }] }).success, false);
+  assert.equal(healthSettingsSchema.safeParse({ exerciseGoalMinutes: 30, stepGoal: 10000 }).success, true);
+  assert.equal(healthSettingsSchema.safeParse({ exerciseGoalMinutes: 0, stepGoal: 10000 }).success, false);
+});

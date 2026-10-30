@@ -47,6 +47,8 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Drop It reads your weight, steps, exercise minutes, and active calories from Apple Health to show them next to your food log and count active calories toward your daily calorie goal.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Drop It uses the camera to scan food barcodes.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
