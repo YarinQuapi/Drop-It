@@ -106,11 +106,23 @@ export function ageOn(dateOfBirth: string, on: string): number {
 }
 
 export function jerusalemMidnight(day: string): Date {
-  let utc = new Date(`${day}T00:00:00.000Z`);
+  return jerusalemWallTime(day, 0, 0, 0);
+}
+
+/** Instant when Asia/Jerusalem shows `day` at hour:minute:second. */
+export function jerusalemWallTime(day: string, hour: number, minute = 0, second = 0): Date {
+  let utc = new Date(`${day}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}.000Z`);
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const parts = jerusalemParts(utc);
     const seen = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
-    const target = Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)), 0, 0, 0);
+    const target = Date.UTC(
+      Number(day.slice(0, 4)),
+      Number(day.slice(5, 7)) - 1,
+      Number(day.slice(8, 10)),
+      hour,
+      minute,
+      second,
+    );
     const next = new Date(utc.getTime() - (seen - target));
     if (next.getTime() === utc.getTime()) break;
     utc = next;

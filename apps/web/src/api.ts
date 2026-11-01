@@ -204,11 +204,24 @@ export type FastingSession = {
   durationMinutes: number | null;
 };
 
+export type FastNotificationKind = "lead" | "late" | "done";
+
+export type FastNotification = {
+  id: string;
+  at: string;
+  kind: FastNotificationKind;
+  leadMinutes: number | null;
+};
+
+export type ReminderOffset = 0 | 30 | 60;
+
 export type FastingState = {
   enabled: boolean;
   lengthHours: number;
   startHour: number;
   endHour: number;
+  reminderOffsets: ReminderOffset[];
+  notifications: FastNotification[];
   running: boolean;
   startedAt: string | null;
   endsAt: string | null;

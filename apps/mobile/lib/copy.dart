@@ -193,10 +193,26 @@ class Copy {
   String get edit => pick('Edit', 'עריכה');
   String get grams => pick('grams', 'גרם');
   String get milliliters => pick('milliliters', 'מיליליטר');
+  String get fastReminder => pick('Fast reminder', 'תזכורת צום');
+  String get reminderAtStart => pick('At start hour', 'בשעת ההתחלה');
+  String get reminder30Before => pick('30 minutes before', '30 דקות לפני');
+  String get reminder1HourBefore => pick('1 hour before', 'שעה לפני');
+  String get reminderLateNote => pick(
+    'If you have not started yet, we will also nudge you 15 minutes after the start hour.',
+    'אם עדיין לא התחלתם, נשלח גם תזכורת 15 דקות אחרי שעת ההתחלה.',
+  );
   String get reminderStart =>
       pick('Time to start your fast', 'הגיע הזמן להתחיל את הצום');
-  String get reminderEnd =>
-      pick('Your fast is near its end', 'הצום מתקרב לסיום');
+  String get reminderLead30 => pick(
+    'Your fast starts in 30 minutes',
+    'הצום מתחיל בעוד 30 דקות',
+  );
+  String get reminderLead60 =>
+      pick('Your fast starts in 1 hour', 'הצום מתחיל בעוד שעה');
+  String get reminderLate => pick(
+    "It's not too late to start fasting",
+    'עדיין לא מאוחר להתחיל לצום',
+  );
   String get reminderDone =>
       pick('Your fast timer is complete', 'טיימר הצום הסתיים');
   String get previousWeek => pick('Previous week', 'השבוע הקודם');

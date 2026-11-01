@@ -39,6 +39,118 @@ export function fastDurationMinutes(startedAt: Date, endedAt: Date): number {
   return Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 60000));
 }
 
+export const REMINDER_OFFSETS = [0, 30, 60] as const;
+export type ReminderOffset = (typeof REMINDER_OFFSETS)[number];
+export type FastNotificationKind = "lead" | "late" | "done";
+
+export type FastNotification = {
+  id: string;
+  at: string;
+  kind: FastNotificationKind;
+  leadMinutes: number | null;
+};
+
+const EARLY_START_MS = 4 * 60 * 60 * 1000;
+const LATE_NUDGE_MS = 15 * 60 * 1000;
+const ALLOWED_OFFSETS = new Set<number>(REMINDER_OFFSETS);
+
+export function parseReminderOffsets(raw: string | null | undefined): ReminderOffset[] {
+  if (raw == null || raw.trim() === "") return [];
+  const seen = new Set<ReminderOffset>();
+  for (const part of raw.split(",")) {
+    const value = Number(part.trim());
+    if (ALLOWED_OFFSETS.has(value)) seen.add(value as ReminderOffset);
+  }
+  return REMINDER_OFFSETS.filter((offset) => seen.has(offset));
+}
+
+export function serializeReminderOffsets(offsets: number[]): string {
+  const seen = new Set<ReminderOffset>();
+  for (const value of offsets) {
+    if (ALLOWED_OFFSETS.has(value)) seen.add(value as ReminderOffset);
+  }
+  return REMINDER_OFFSETS.filter((offset) => seen.has(offset)).join(",");
+}
+
+/** True when a session start belongs to the scheduled window (early start allowed). */
+export function sessionCoversScheduledStart(sessionStarts: Date[], scheduledStart: Date): boolean {
+  const open = scheduledStart.getTime() - EARLY_START_MS;
+  const close = scheduledStart.getTime() + LATE_NUDGE_MS;
+  return sessionStarts.some((startedAt) => {
+    const t = startedAt.getTime();
+    return t >= open && t <= close;
+  });
+}
+
+export function planFastNotifications(input: {
+  enabled: boolean;
+  startHour: number;
+  reminderOffsets: ReminderOffset[];
+  running: boolean;
+  endsAt: Date | null;
+  sessionStarts: Date[];
+  now?: Date;
+  days?: number;
+  wallTime: (day: string, hour: number, minute?: number) => Date;
+  today: (now?: Date) => string;
+  addDays: (day: string, count: number) => string;
+}): FastNotification[] {
+  const now = input.now ?? new Date();
+  const notifications: FastNotification[] = [];
+  if (!input.enabled) {
+    if (input.running && input.endsAt && input.endsAt.getTime() > now.getTime()) {
+      notifications.push({
+        id: "done",
+        at: input.endsAt.toISOString(),
+        kind: "done",
+        leadMinutes: null,
+      });
+    }
+    return notifications;
+  }
+
+  const dayCount = input.days ?? 7;
+  const today = input.today(now);
+  for (let offsetDay = 0; offsetDay < dayCount; offsetDay += 1) {
+    const day = input.addDays(today, offsetDay);
+    const scheduledStart = input.wallTime(day, input.startHour, 0);
+    for (const lead of input.reminderOffsets) {
+      const at = new Date(scheduledStart.getTime() - lead * 60 * 1000);
+      if (at.getTime() <= now.getTime()) continue;
+      notifications.push({
+        id: `lead-${day}-${lead}`,
+        at: at.toISOString(),
+        kind: "lead",
+        leadMinutes: lead,
+      });
+    }
+    const lateAt = new Date(scheduledStart.getTime() + LATE_NUDGE_MS);
+    const covered = sessionCoversScheduledStart(input.sessionStarts, scheduledStart);
+    const stillFastingThroughLate =
+      input.running && input.endsAt != null && lateAt.getTime() <= input.endsAt.getTime();
+    if (lateAt.getTime() > now.getTime() && !covered && !stillFastingThroughLate) {
+      notifications.push({
+        id: `late-${day}`,
+        at: lateAt.toISOString(),
+        kind: "late",
+        leadMinutes: null,
+      });
+    }
+  }
+
+  if (input.running && input.endsAt && input.endsAt.getTime() > now.getTime()) {
+    notifications.push({
+      id: "done",
+      at: input.endsAt.toISOString(),
+      kind: "done",
+      leadMinutes: null,
+    });
+  }
+
+  notifications.sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+  return notifications;
+}
+
 export function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }

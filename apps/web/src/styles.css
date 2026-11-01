@@ -394,6 +394,23 @@ label:has(> input[type="checkbox"]) {
   min-height: var(--hit);
 }
 
+.reminder-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  margin: 0;
+  padding: var(--gap-lg);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-card);
+  background: var(--bg-tertiary);
+}
+
+.reminder-group legend {
+  padding: 0 var(--gap-sm);
+  font-weight: 600;
+  letter-spacing: -0.022em;
+}
+
 /* Segmented control */
 .segmented {
   display: flex;

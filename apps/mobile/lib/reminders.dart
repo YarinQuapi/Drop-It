@@ -2,6 +2,22 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+class ReminderCopy {
+  const ReminderCopy({
+    required this.start,
+    required this.lead30,
+    required this.lead60,
+    required this.late,
+    required this.done,
+  });
+
+  final String start;
+  final String lead30;
+  final String lead60;
+  final String late;
+  final String done;
+}
+
 class Reminders {
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
@@ -19,49 +35,48 @@ class Reminders {
   }
 
   Future<void> schedule({
-    required bool enabled,
-    required int startHour,
-    required int endHour,
-    required String startText,
-    required String endText,
-    required String doneText,
-    String? endsAtIso,
+    required List<Map<String, dynamic>> notifications,
+    required ReminderCopy copy,
   }) async {
     if (!_ready) return;
     await _plugin.cancelAll();
-    if (!enabled) return;
-    await _daily(1, startHour, startText);
-    await _daily(2, endHour, endText);
-    if (endsAtIso != null) {
-      final when = DateTime.parse(endsAtIso).toLocal();
+    final now = tz.TZDateTime.now(tz.local);
+    var id = 1;
+    for (final item in notifications) {
+      final atIso = item['at'] as String?;
+      final kind = item['kind'] as String?;
+      if (atIso == null || kind == null) continue;
+      final when = DateTime.parse(atIso).toLocal();
       final zoned = tz.TZDateTime.from(when, tz.local);
-      if (zoned.isAfter(tz.TZDateTime.now(tz.local))) {
-        await _plugin.zonedSchedule(
-          id: 3,
-          title: 'Drop It',
-          body: doneText,
-          scheduledDate: zoned,
-          notificationDetails: const NotificationDetails(iOS: DarwinNotificationDetails()),
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        );
-      }
+      if (!zoned.isAfter(now)) continue;
+      final body = _bodyFor(kind, item['leadMinutes'], copy);
+      if (body == null) continue;
+      await _plugin.zonedSchedule(
+        id: id++,
+        title: 'Drop It',
+        body: body,
+        scheduledDate: zoned,
+        notificationDetails: const NotificationDetails(iOS: DarwinNotificationDetails()),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      );
     }
   }
 
-  Future<void> _daily(int id, int hour, String body) async {
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour);
-    if (!scheduled.isAfter(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
+  String? _bodyFor(String kind, Object? leadMinutes, ReminderCopy copy) {
+    switch (kind) {
+      case 'lead':
+        final minutes = leadMinutes is int
+            ? leadMinutes
+            : int.tryParse('$leadMinutes') ?? 0;
+        if (minutes >= 60) return copy.lead60;
+        if (minutes >= 30) return copy.lead30;
+        return copy.start;
+      case 'late':
+        return copy.late;
+      case 'done':
+        return copy.done;
+      default:
+        return null;
     }
-    await _plugin.zonedSchedule(
-      id: id,
-      title: 'Drop It',
-      body: body,
-      scheduledDate: scheduled,
-      notificationDetails: const NotificationDetails(iOS: DarwinNotificationDetails()),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
   }
 }

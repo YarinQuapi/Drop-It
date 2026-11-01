@@ -1,9 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { approximateEndHour, calorieGoal, checkPassword, daySucceeded, effectiveGoalKcal, fastDurationMinutes, fastEndsAt, resolveBarcode, scaleNutrients, summarizeWeekDays, usesHealthBase, validatePassword, weightChangeKg, weightForGoal } from "./domain.js";
+import {
+  approximateEndHour,
+  calorieGoal,
+  checkPassword,
+  daySucceeded,
+  effectiveGoalKcal,
+  fastDurationMinutes,
+  fastEndsAt,
+  parseReminderOffsets,
+  planFastNotifications,
+  resolveBarcode,
+  scaleNutrients,
+  serializeReminderOffsets,
+  summarizeWeekDays,
+  usesHealthBase,
+  validatePassword,
+  weightChangeKg,
+  weightForGoal,
+} from "./domain.js";
 import { DEFAULT_USER_PERMISSIONS, OPERATIONS, resolvePermissions } from "./rbac.js";
-import { changePasswordSchema, foodSchema, healthSettingsSchema, healthSyncSchema, profileSchema, signupSchema } from "./schemas.js";
-import { addDays, ageOn, canonicalDay, firstOfMonth, jerusalemMidnight, jerusalemParts, sundayOf, todayJerusalem } from "./time.js";
+import { changePasswordSchema, fastingSchema, foodSchema, healthSettingsSchema, healthSyncSchema, profileSchema, signupSchema } from "./schemas.js";
+import { addDays, ageOn, canonicalDay, firstOfMonth, jerusalemMidnight, jerusalemParts, jerusalemWallTime, sundayOf, todayJerusalem } from "./time.js";
 
 test("mifflin goal uses activity, deficit, floor, then nearest kcal", () => {
   assert.equal(
@@ -213,6 +231,110 @@ test("a fast ends at its start plus the chosen length", () => {
   const startedAt = new Date("2026-10-09T17:14:00.000Z");
   assert.equal(fastEndsAt(startedAt, 16).toISOString(), "2026-10-10T09:14:00.000Z");
   assert.equal(fastDurationMinutes(startedAt, new Date("2026-10-10T08:19:00.000Z")), 15 * 60 + 5);
+});
+
+test("reminder offsets serialize as a stable comma list", () => {
+  assert.equal(serializeReminderOffsets([60, 0, 30, 30]), "0,30,60");
+  assert.deepEqual(parseReminderOffsets("60,0"), [0, 60]);
+  assert.deepEqual(parseReminderOffsets(""), []);
+  assert.deepEqual(parseReminderOffsets("0"), [0]);
+});
+
+test("fasting schema defaults reminder offsets to at start", () => {
+  const parsed = fastingSchema.parse({ enabled: true, lengthHours: 16, startHour: 20 });
+  assert.deepEqual(parsed.reminderOffsets, [0]);
+});
+
+test("fast notifications never use the clock end hour and only emit done while running", () => {
+  const now = jerusalemWallTime("2026-11-01", 12, 0);
+  const planned = planFastNotifications({
+    enabled: true,
+    startHour: 20,
+    reminderOffsets: [0],
+    running: false,
+    endsAt: null,
+    sessionStarts: [],
+    now,
+    days: 1,
+    wallTime: jerusalemWallTime,
+    today: () => "2026-11-01",
+    addDays,
+  });
+  assert.equal(planned.some((item) => item.kind === "done"), false);
+  assert.deepEqual(
+    planned.map((item) => item.kind).sort(),
+    ["late", "lead"],
+  );
+  assert.equal(planned.find((item) => item.kind === "lead")?.at, jerusalemWallTime("2026-11-01", 20, 0).toISOString());
+  assert.equal(planned.find((item) => item.kind === "late")?.at, jerusalemWallTime("2026-11-01", 20, 15).toISOString());
+});
+
+test("fast lead reminders follow the selected offsets", () => {
+  const now = jerusalemWallTime("2026-11-01", 10, 0);
+  const planned = planFastNotifications({
+    enabled: true,
+    startHour: 20,
+    reminderOffsets: [60, 30, 0],
+    running: false,
+    endsAt: null,
+    sessionStarts: [],
+    now,
+    days: 1,
+    wallTime: jerusalemWallTime,
+    today: () => "2026-11-01",
+    addDays,
+  });
+  const leads = planned.filter((item) => item.kind === "lead");
+  assert.deepEqual(
+    leads.map((item) => item.leadMinutes),
+    [60, 30, 0],
+  );
+  assert.equal(leads[0].at, jerusalemWallTime("2026-11-01", 19, 0).toISOString());
+  assert.equal(leads[1].at, jerusalemWallTime("2026-11-01", 19, 30).toISOString());
+  assert.equal(leads[2].at, jerusalemWallTime("2026-11-01", 20, 0).toISOString());
+});
+
+test("late nudge is skipped after the user starts the fast window", () => {
+  const startedAt = jerusalemWallTime("2026-11-01", 19, 45);
+  const endsAt = fastEndsAt(startedAt, 16);
+  const now = jerusalemWallTime("2026-11-01", 20, 5);
+  const planned = planFastNotifications({
+    enabled: true,
+    startHour: 20,
+    reminderOffsets: [0],
+    running: true,
+    endsAt,
+    sessionStarts: [startedAt],
+    now,
+    days: 1,
+    wallTime: jerusalemWallTime,
+    today: () => "2026-11-01",
+    addDays,
+  });
+  assert.equal(planned.some((item) => item.kind === "late"), false);
+  assert.equal(planned.some((item) => item.kind === "lead"), false);
+  assert.equal(planned.some((item) => item.kind === "done"), true);
+  assert.equal(planned.find((item) => item.kind === "done")?.at, endsAt.toISOString());
+});
+
+test("disabled fasting still schedules done for a running timer", () => {
+  const startedAt = jerusalemWallTime("2026-11-01", 18, 0);
+  const endsAt = fastEndsAt(startedAt, 16);
+  const now = jerusalemWallTime("2026-11-01", 19, 0);
+  const planned = planFastNotifications({
+    enabled: false,
+    startHour: 20,
+    reminderOffsets: [0, 30],
+    running: true,
+    endsAt,
+    sessionStarts: [startedAt],
+    now,
+    days: 2,
+    wallTime: jerusalemWallTime,
+    today: () => "2026-11-01",
+    addDays,
+  });
+  assert.deepEqual(planned, [{ id: "done", at: endsAt.toISOString(), kind: "done", leadMinutes: null }]);
 });
 
 test("today is a calendar day", () => {

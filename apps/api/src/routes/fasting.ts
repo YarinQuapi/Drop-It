@@ -1,11 +1,19 @@
 import { Router } from "express";
 import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
-import { approximateEndHour, fastDurationMinutes, fastEndsAt } from "../domain.js";
+import {
+  approximateEndHour,
+  fastDurationMinutes,
+  fastEndsAt,
+  parseReminderOffsets,
+  planFastNotifications,
+  serializeReminderOffsets,
+} from "../domain.js";
 import { closeRunningFast } from "../fasting-log.js";
 import { asyncRoute, HttpError } from "../http.js";
 import { requirePermission } from "../rbac.js";
 import { fastingSchema } from "../schemas.js";
+import { addDays, jerusalemWallTime, todayJerusalem } from "../time.js";
 
 export const fastingRouter = Router();
 fastingRouter.use(requireUser);
@@ -25,7 +33,14 @@ fastingRouter.put(
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const body = fastingSchema.parse(req.body);
-    const saved = { ...body, endHour: approximateEndHour(body.startHour, body.lengthHours) };
+    const reminderOffsets = serializeReminderOffsets(body.reminderOffsets);
+    const saved = {
+      enabled: body.enabled,
+      lengthHours: body.lengthHours,
+      startHour: body.startHour,
+      endHour: approximateEndHour(body.startHour, body.lengthHours),
+      reminderOffsets,
+    };
     await prisma.fastingSettings.upsert({
       where: { userId: user.id },
       create: { userId: user.id, ...saved },
@@ -109,18 +124,41 @@ async function loadState(userId: string) {
 }
 
 function present(
-  settings: { enabled: boolean; lengthHours: number; startHour: number; endHour: number } | null,
+  settings: {
+    enabled: boolean;
+    lengthHours: number;
+    startHour: number;
+    endHour: number;
+    reminderOffsets: string;
+  } | null,
   timer: { startedAt: Date | null; lengthHours: number | null; stoppedAt: Date | null } | null,
   sessions: { id: string; startedAt: Date; endedAt: Date | null; lengthHours: number }[],
 ) {
   const running = Boolean(timer?.startedAt && !timer.stoppedAt && timer.lengthHours);
   const endsAt =
     running && timer?.startedAt && timer.lengthHours ? fastEndsAt(timer.startedAt, timer.lengthHours) : null;
+  const enabled = settings?.enabled ?? false;
+  const lengthHours = settings?.lengthHours ?? 16;
+  const startHour = settings?.startHour ?? 20;
+  const reminderOffsets = parseReminderOffsets(settings?.reminderOffsets ?? "0");
+  const notifications = planFastNotifications({
+    enabled,
+    startHour,
+    reminderOffsets,
+    running,
+    endsAt,
+    sessionStarts: sessions.map((session) => session.startedAt),
+    wallTime: jerusalemWallTime,
+    today: todayJerusalem,
+    addDays,
+  });
   return {
-    enabled: settings?.enabled ?? false,
-    lengthHours: settings?.lengthHours ?? 16,
-    startHour: settings?.startHour ?? 20,
+    enabled,
+    lengthHours,
+    startHour,
     endHour: settings ? approximateEndHour(settings.startHour, settings.lengthHours) : 12,
+    reminderOffsets,
+    notifications,
     running,
     startedAt: running ? timer?.startedAt?.toISOString() ?? null : null,
     endsAt: endsAt?.toISOString() ?? null,

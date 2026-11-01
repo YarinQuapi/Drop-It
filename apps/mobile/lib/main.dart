@@ -63,6 +63,7 @@ class _DropItAppState extends State<DropItApp> with WidgetsBindingObserver {
         me != null &&
         me!['hasProfile'] == true) {
       unawaited(health.syncIfConnected());
+      unawaited(syncReminders());
     }
   }
 
@@ -101,14 +102,20 @@ class _DropItAppState extends State<DropItApp> with WidgetsBindingObserver {
     if (api.token == null) return;
     try {
       final fasting = await api.send('GET', '/api/fasting');
+      final notifications =
+          ((fasting['notifications'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((item) => item.cast<String, dynamic>())
+              .toList();
       await reminders.schedule(
-        enabled: fasting['enabled'] == true,
-        startHour: fasting['startHour'] as int,
-        endHour: fasting['endHour'] as int,
-        startText: t.reminderStart,
-        endText: t.reminderEnd,
-        doneText: t.reminderDone,
-        endsAtIso: fasting['endsAt'] as String?,
+        notifications: notifications,
+        copy: ReminderCopy(
+          start: t.reminderStart,
+          lead30: t.reminderLead30,
+          lead60: t.reminderLead60,
+          late: t.reminderLate,
+          done: t.reminderDone,
+        ),
       );
     } catch (_) {}
   }
@@ -699,7 +706,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       WeekScreen(api: widget.api, t: t),
       WeightScreen(api: widget.api, t: t),
-      FastingScreen(api: widget.api, t: t),
+      FastingScreen(api: widget.api, t: t, sync: widget.sync),
       SettingsScreen(
         api: widget.api,
         t: t,
@@ -1237,9 +1244,15 @@ class _ScanScreenState extends State<ScanScreen> {
 }
 
 class FastingScreen extends StatefulWidget {
-  const FastingScreen({super.key, required this.api, required this.t});
+  const FastingScreen({
+    super.key,
+    required this.api,
+    required this.t,
+    required this.sync,
+  });
   final Api api;
   final Copy t;
+  final Future<void> Function() sync;
 
   @override
   State<FastingScreen> createState() => _FastingScreenState();
@@ -1364,6 +1377,7 @@ class _FastingScreenState extends State<FastingScreen> {
                           running ? '/api/fasting/stop' : '/api/fasting/start',
                         );
                         await load();
+                        await widget.sync();
                       } on ApiException catch (err) {
                         setState(() => error = t.error(err.code));
                       }
@@ -1586,6 +1600,7 @@ class WeightScreen extends StatefulWidget {
 class _WeightScreenState extends State<WeightScreen> {
   List<Map<String, dynamic>> weights = [];
   final controller = TextEditingController();
+  String error = '';
 
   @override
   void initState() {
@@ -1612,21 +1627,31 @@ class _WeightScreenState extends State<WeightScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextField(
-                  controller: controller,
-                  decoration: InputDecoration(labelText: t.weightKg),
-                  keyboardType: TextInputType.number,
-                ),
+                decimalField(controller, t.weightKg),
+                if (error.isNotEmpty) ...[
+                  const SizedBox(height: Gaps.sm),
+                  ErrorText(error),
+                ],
                 const SizedBox(height: Gaps.md),
                 FilledButton(
                   onPressed: () async {
-                    await widget.api.send(
-                      'POST',
-                      '/api/weights',
-                      body: {'weightKg': num.parse(controller.text)},
-                    );
-                    controller.clear();
-                    await load();
+                    final weightKg = parseDecimal(controller.text);
+                    if (weightKg == null) {
+                      setState(() => error = t.error('invalid_body'));
+                      return;
+                    }
+                    try {
+                      await widget.api.send(
+                        'POST',
+                        '/api/weights',
+                        body: {'weightKg': weightKg},
+                      );
+                      controller.clear();
+                      setState(() => error = '');
+                      await load();
+                    } on ApiException catch (err) {
+                      setState(() => error = t.error(err.code));
+                    }
                   },
                   child: Text(t.logWeight),
                 ),
@@ -2434,10 +2459,32 @@ class _FastingEditorState extends State<FastingEditor> {
   late bool enabled = widget.fasting['enabled'] == true;
   late int length = widget.fasting['lengthHours'] as int;
   late int startHour = widget.fasting['startHour'] as int;
+  late Set<int> reminderOffsets = _offsetsFrom(widget.fasting['reminderOffsets']);
+
+  static Set<int> _offsetsFrom(Object? raw) {
+    if (raw is List) {
+      return {
+        for (final value in raw)
+          if (value is int && (value == 0 || value == 30 || value == 60)) value,
+      };
+    }
+    return {0};
+  }
+
+  void _toggleOffset(int offset, bool on) {
+    setState(() {
+      if (on) {
+        reminderOffsets = {...reminderOffsets, offset};
+      } else {
+        reminderOffsets = {...reminderOffsets}..remove(offset);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
+    final apple = context.apple;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(Gaps.lg),
@@ -2466,14 +2513,48 @@ class _FastingEditorState extends State<FastingEditor> {
             ),
             Text(
               '${t.endHour}: ${((startHour + length) % 24).toString().padLeft(2, '0')}:00',
-              style: TextStyle(color: context.apple.labelSecondary),
+              style: TextStyle(color: apple.labelSecondary),
             ),
+            if (enabled) ...[
+              Text(
+                t.fastReminder,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: Text(t.reminderAtStart),
+                value: reminderOffsets.contains(0),
+                onChanged: (value) => _toggleOffset(0, value),
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: Text(t.reminder30Before),
+                value: reminderOffsets.contains(30),
+                onChanged: (value) => _toggleOffset(30, value),
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: Text(t.reminder1HourBefore),
+                value: reminderOffsets.contains(60),
+                onChanged: (value) => _toggleOffset(60, value),
+              ),
+              Text(
+                t.reminderLateNote,
+                style: TextStyle(color: apple.labelSecondary, fontSize: 13),
+              ),
+            ],
             FilledButton(
-              onPressed: () => widget.onSave({
-                'enabled': enabled,
-                'lengthHours': length,
-                'startHour': startHour,
-              }),
+              onPressed: () {
+                final offsets = [0, 30, 60]
+                    .where(reminderOffsets.contains)
+                    .toList();
+                widget.onSave({
+                  'enabled': enabled,
+                  'lengthHours': length,
+                  'startHour': startHour,
+                  'reminderOffsets': offsets,
+                });
+              },
               child: Text(t.save),
             ),
           ],

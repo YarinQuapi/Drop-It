@@ -141,4 +141,8 @@ export const fastingSchema = z.object({
   enabled: z.boolean(),
   lengthHours: z.union([z.literal(12), z.literal(14), z.literal(16)]),
   startHour: z.number().int().min(0).max(23),
+  reminderOffsets: z
+    .array(z.union([z.literal(0), z.literal(30), z.literal(60)]))
+    .max(3)
+    .default([0]),
 });

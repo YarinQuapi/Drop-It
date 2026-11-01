@@ -8,7 +8,9 @@ import {
   type DayResponse,
   type FastingSession,
   type FastingState,
+  type FastNotification,
   type Food,
+  type ReminderOffset,
   MEALS,
   type MealCategory,
   type Me,
@@ -21,7 +23,7 @@ import {
   type WeightPoint,
 } from "./api";
 import { fetchAppleConfig, signInWithApple, type AppleConfig } from "./apple";
-import { addDays, formatJerusalem, formatJerusalemDay, formatJerusalemTime, hourLabel, jerusalemParts, msUntilHour } from "./clock";
+import { addDays, formatJerusalem, formatJerusalemDay, formatJerusalemTime, hourLabel, jerusalemParts } from "./clock";
 import { THEME_MODES, useI18n, useTheme, type Copy, type Lang, type ThemeMode } from "./i18n";
 import { DateField, MenuField } from "./pickers";
 
@@ -55,8 +57,13 @@ function Shell({ me, setMe }: { me: Me; setMe: (me: Me | null) => void }) {
   const { t } = useI18n();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reminderVersion, setReminderVersion] = useState(0);
+  const [notice, setNotice] = useState("");
   function closeMenu() {
     setMenuOpen(false);
+  }
+  function bumpReminders() {
+    setReminderVersion((value) => value + 1);
   }
   useEffect(() => {
     if (!menuOpen) return;
@@ -66,6 +73,42 @@ function Shell({ me, setMe }: { me: Me; setMe: (me: Me | null) => void }) {
       document.body.style.overflow = prev;
     };
   }, [menuOpen]);
+  useEffect(() => {
+    if (!notice) return;
+    const id = window.setTimeout(() => setNotice(""), 8000);
+    return () => window.clearTimeout(id);
+  }, [notice]);
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") bumpReminders();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+  useEffect(() => {
+    if (!me.hasProfile) return;
+    let cancelled = false;
+    const timers: number[] = [];
+    api<FastingState>("/api/fasting")
+      .then((fasting) => {
+        if (cancelled) return;
+        for (const item of fasting.notifications ?? []) {
+          const wait = new Date(item.at).getTime() - Date.now();
+          if (wait <= 0) continue;
+          timers.push(
+            window.setTimeout(() => {
+              notify(reminderText(t, item), setNotice);
+              bumpReminders();
+            }, wait),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [me.hasProfile, reminderVersion, t]);
   if (!me.hasProfile && !location.pathname.startsWith("/setup")) {
     return <Navigate to="/setup/fasting" />;
   }
@@ -101,12 +144,13 @@ function Shell({ me, setMe }: { me: Me; setMe: (me: Me | null) => void }) {
       </header>
       {menuLayer}
       <div key={location.pathname} className="page">
+        {notice && <p className="rise">{notice}</p>}
         <Routes location={location}>
           <Route path="/" element={<Today canVerifyFoods={canVerifyFoods} />} />
           <Route path="/week" element={<WeekPage />} />
           <Route path="/weight" element={<WeightPage />} />
-          <Route path="/fasting" element={<FastingPage />} />
-          <Route path="/settings" element={<SettingsPage me={me} setMe={setMe} />} />
+          <Route path="/fasting" element={<FastingPage onFastingChange={bumpReminders} />} />
+          <Route path="/settings" element={<SettingsPage me={me} setMe={setMe} onFastingChange={bumpReminders} />} />
           <Route path="/permissions" element={me.user.isAdmin ? <PermissionsPage /> : <Navigate to="/" />} />
           <Route path="/foods/new" element={<FoodForm />} />
           <Route path="/foods/:id" element={<FoodForm />} />
@@ -547,11 +591,10 @@ function mealLabel(t: Copy, meal: MealCategory) {
   }
 }
 
-function FastingPage() {
+function FastingPage({ onFastingChange }: { onFastingChange: () => void }) {
   const { t } = useI18n();
   const [fasting, setFasting] = useState<FastingState | null>(null);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -563,25 +606,13 @@ function FastingPage() {
     return () => window.clearInterval(tick);
   }, []);
 
-  useEffect(() => {
-    if (!fasting?.enabled) return;
-    const timers = [
-      window.setTimeout(() => notify(t.reminderStart, setNotice), msUntilHour(fasting.startHour)),
-      window.setTimeout(() => notify(t.reminderEnd, setNotice), msUntilHour(fasting.endHour)),
-    ];
-    if (fasting.running && fasting.endsAt) {
-      const wait = new Date(fasting.endsAt).getTime() - Date.now();
-      if (wait > 0) timers.push(window.setTimeout(() => notify(t.reminderDone, setNotice), wait));
-    }
-    return () => timers.forEach((id) => window.clearTimeout(id));
-  }, [fasting, t]);
-
   async function toggle() {
     if (!fasting) return;
     try {
       const next = await api<FastingState>(fasting.running ? "/api/fasting/stop" : "/api/fasting/start", { method: "POST" });
       setFasting(next);
       setError("");
+      onFastingChange();
     } catch (err) {
       setError(message(t, err));
     }
@@ -609,7 +640,6 @@ function FastingPage() {
           </div>
         ) : fasting && <p className="muted">{t.fasting_disabled} <Link to="/settings">{t.settings}</Link></p>}
         {error && <p className="error">{error}</p>}
-        {notice && <p className="rise">{notice}</p>}
       </section>
       <section className="card">
         <h2>{t.fastLog}</h2>
@@ -764,7 +794,7 @@ function WeightPage() {
       await api("/api/weights", {
         method: "POST",
         body: JSON.stringify({
-          weightKg: Number(data.get("weightKg")),
+          weightKg: readNutrient(data.get("weightKg")),
           loggedAt: loggedAt ? new Date(loggedAt).toISOString() : undefined,
         }),
       });
@@ -779,7 +809,7 @@ function WeightPage() {
     <>
       <form className="card" onSubmit={save}>
         <h1>{t.weight}</h1>
-        <label><span>{t.weightKg}</span><input name="weightKg" inputMode="decimal" required /></label>
+        <label><span>{t.weightKg}</span><input name="weightKg" inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
         <label><span>{t.loggedAt}</span><input name="loggedAt" type="datetime-local" /></label>
         {error && <p className="error">{error}</p>}
         <button type="submit">{t.logWeight}</button>
@@ -825,11 +855,13 @@ function WeightGraph({ weights }: { weights: WeightPoint[] }) {
   );
 }
 
-function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
+function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) => void; onFastingChange: () => void }) {
   const { t, setLang } = useI18n();
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [fasting, setFasting] = useState<FastingState | null>(null);
+  const [fastingEnabledDraft, setFastingEnabledDraft] = useState(false);
+  const [reminderOffsets, setReminderOffsets] = useState<ReminderOffset[]>([0]);
   const [autoPublish, setAutoPublish] = useState(me.user.autoPublishFoods);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -847,6 +879,8 @@ function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
     ]).then(([profileResponse, fastingResponse]) => {
       setProfile(profileResponse.profile);
       setFasting(fastingResponse);
+      setFastingEnabledDraft(fastingResponse.enabled);
+      setReminderOffsets(fastingResponse.reminderOffsets ?? [0]);
     }).catch((err) => setError(message(t, err)));
   }, [t]);
   useEffect(() => {
@@ -895,19 +929,32 @@ function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
       setError(message(t, err));
     }
   }
+  function toggleReminderOffset(offset: ReminderOffset, on: boolean) {
+    setReminderOffsets((current) => {
+      const next = new Set(current);
+      if (on) next.add(offset);
+      else next.delete(offset);
+      return ([0, 30, 60] as const).filter((value) => next.has(value));
+    });
+  }
+
   async function saveFasting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const next = await api<FastingState>("/api/fasting", {
       method: "PUT",
       body: JSON.stringify({
-        enabled: form.get("enabled") === "on",
+        enabled: fastingEnabledDraft,
         lengthHours: Number(form.get("lengthHours")),
         startHour: Number(form.get("startHour")),
+        reminderOffsets,
       }),
     });
     setFasting(next);
+    setFastingEnabledDraft(next.enabled);
+    setReminderOffsets(next.reminderOffsets ?? []);
     setMe({ ...me, fastingEnabled: next.enabled });
+    onFastingChange();
   }
   async function saveLanguage(language: Lang) {
     await api("/api/profile/settings", { method: "PUT", body: JSON.stringify({ language, autoPublishFoods: autoPublish }) });
@@ -1045,9 +1092,17 @@ function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
         </form>
       )}
       {fasting && (
-        <form className="card" onSubmit={saveFasting} key={`${fasting.enabled}-${fasting.lengthHours}-${fasting.startHour}`}>
+        <form className="card" onSubmit={saveFasting} key={`${fasting.lengthHours}-${fasting.startHour}-${fasting.reminderOffsets.join(",")}`}>
           <h2>{t.fasting}</h2>
-          <label><input name="enabled" type="checkbox" defaultChecked={fasting.enabled} />{t.fastingOn}</label>
+          <label>
+            <input
+              name="enabled"
+              type="checkbox"
+              checked={fastingEnabledDraft}
+              onChange={(event) => setFastingEnabledDraft(event.target.checked)}
+            />
+            {t.fastingOn}
+          </label>
           <MenuField
             name="lengthHours"
             label={t.fastingLength}
@@ -1060,6 +1115,15 @@ function SettingsPage({ me, setMe }: { me: Me; setMe: (me: Me) => void }) {
           />
           <HourField name="startHour" label={t.startHour} defaultValue={fasting.startHour} />
           <p className="muted">{t.endHour}: {hourLabel(fasting.endHour)}</p>
+          {fastingEnabledDraft && (
+            <fieldset className="reminder-group">
+              <legend>{t.fastReminder}</legend>
+              <label><input type="checkbox" checked={reminderOffsets.includes(0)} onChange={(event) => toggleReminderOffset(0, event.target.checked)} />{t.reminderAtStart}</label>
+              <label><input type="checkbox" checked={reminderOffsets.includes(30)} onChange={(event) => toggleReminderOffset(30, event.target.checked)} />{t.reminder30Before}</label>
+              <label><input type="checkbox" checked={reminderOffsets.includes(60)} onChange={(event) => toggleReminderOffset(60, event.target.checked)} />{t.reminder1HourBefore}</label>
+              <p className="muted">{t.reminderLateNote}</p>
+            </fieldset>
+          )}
           <button type="submit">{t.save}</button>
         </form>
       )}
@@ -1290,6 +1354,14 @@ function useEase(target: number, initial: number) {
 
 function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function reminderText(t: Copy, item: FastNotification): string {
+  if (item.kind === "late") return t.reminderLate;
+  if (item.kind === "done") return t.reminderDone;
+  if (item.leadMinutes != null && item.leadMinutes >= 60) return t.reminderLead60;
+  if (item.leadMinutes != null && item.leadMinutes >= 30) return t.reminderLead30;
+  return t.reminderStart;
 }
 
 function notify(text: string, setNotice: (value: string) => void) {
