@@ -25,6 +25,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DATABASE_URL: mysql://ci:ci@127.0.0.1:3306/ci
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_USER: ci
+      DATABASE_PASSWORD: ci
+      DATABASE_NAME: ci
+      DATABASE_PORT: 3306
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -32,6 +39,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Generate Prisma client
+        working-directory: apps/api
+        run: npx prisma generate --config prisma7.config.ts
       - run: npm test
 
   publish:
