@@ -118,7 +118,7 @@ final class HealthSync {
 
   // MARK: Reading
 
-  private enum ReadFailure: Equatable {
+  private enum ReadFailure: Error, Equatable {
     case authorization
     case failed
   }
