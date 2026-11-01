@@ -1,0 +1,48 @@
+---
+description: Apple HIG design system for Drop It web and mobile UI (colors, radii, spacing, theming)
+alwaysApply: true
+---
+
+# Apple HIG Design System
+
+All UI in `apps/web` and `apps/mobile` follows Apple Human Interface Guidelines.
+Tokens live in `apps/web/src/styles.css` (CSS variables) and `apps/mobile/lib/theme.dart` (`AppleColors`, `Radii`, `Gaps`, `buildAppleTheme`). Reuse them; never invent new values.
+
+## Theming (required)
+- Three appearance modes: `system` (default), `light`, `dark`. Every surface, text, border, icon and chart must work in all of them.
+- NEVER hardcode hex/rgb colors in components. Web: `var(--token)`. Flutter: `context.apple.<token>` or `Theme.of(context)`.
+- Web mode is set via `data-theme` on `<html>` (absent = follow OS), persisted in `localStorage["dropit_theme"]`. Mobile persists in `theme.json` via `Api.saveThemeMode`.
+
+## Color tokens (light / dark)
+- `bg-grouped` #F2F2F7 / #000000 (page); `bg-elevated` #FFFFFF / #1C1C1E (cards); `bg-tertiary` #EFEFF4 / #2C2C2E (inputs, tiles)
+- `label-primary` #000 / #FFF; `label-secondary` 60% opacity gray; `separator` hairline gray
+- `accent-primary` #007AFF / #0A84FF (actions, links); `accent-energy` #FF9500 / #FF9F0A (calorie ring, fasting)
+- `accent-success` #34C759 / #30D158; `accent-danger` #FF3B30 / #FF453A
+- For colored TEXT use the `-text` variants (`accent-energy-text`, `accent-success-text`, `accent-danger-text`) for contrast on white.
+
+## Radii
+`10px` segmented control / inner tiles, `12px` buttons and inputs, `16px` cards, `20px` sheets / drawers / hero cards, `999px` chips.
+
+## Spacing (8pt grid)
+- Page padding 16px (20px on web >=641px); gap between cards 16px; card padding 16px (20px on hero cards).
+- Control/row gaps: 8, 12, 16 only (plus 4 and 24). Use `Gaps.*` in Flutter, `--gap-*` on web.
+- Minimum touch target 44px (`--hit` / `Gaps.hit`). Row dividers are 0.5px hairlines using `separator`.
+
+## Typography and materials
+- Font: `-apple-system, BlinkMacSystemFont, "SF Pro Text"`; platform default in Flutter. Headings use tight tracking (-0.022em). Numbers/timers use tabular figures.
+- Top bars, drawers and sheets use translucent `surface-glass` with `backdrop-filter: saturate(180%) blur(20px)`.
+- Toggles are iOS switches (green when on); appearance picker is a segmented control.
+
+## Do / Don't
+```css
+/* BAD */  .card { background: #1c1c1f; border-radius: 8px; padding: 13px; }
+/* GOOD */ .card { background: var(--bg-elevated); border-radius: var(--radius-card); padding: var(--gap-lg); }
+```
+```dart
+// BAD
+Container(color: const Color(0xFF1C1C1F), padding: const EdgeInsets.all(13))
+// GOOD
+Container(color: context.apple.cardBg, padding: const EdgeInsets.all(Gaps.lg))
+```
+- New copy strings must be added in both English and Hebrew (`apps/web/src/i18n.tsx`, `apps/mobile/lib/copy.dart`); layouts must work in RTL (use logical properties / `Directionality`).
+- Respect `prefers-reduced-motion` (web) and disabled animations (Flutter).
