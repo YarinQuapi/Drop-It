@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE "Profile" ADD COLUMN "customGoalKcal" INTEGER;
+ALTER TABLE `Profile` ADD COLUMN `customGoalKcal` INTEGER NULL;
