@@ -129,6 +129,7 @@ export type Profile = {
   weightKg: number;
   activity: "sedentary" | "light" | "moderate" | "very" | "extra";
   weeklyPace: "kg025" | "kg050" | "kg100";
+  customGoalKcal: number | null;
 };
 
 export type MealCategory = "breakfast" | "lunch" | "dinner" | "snacks";

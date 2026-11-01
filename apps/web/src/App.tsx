@@ -25,6 +25,13 @@ import {
 import { fetchAppleConfig, signInWithApple, type AppleConfig } from "./apple";
 import { addDays, formatJerusalem, formatJerusalemDay, formatJerusalemTime, hourLabel, jerusalemParts } from "./clock";
 import { THEME_MODES, useI18n, useTheme, type Copy, type Lang, type ThemeMode } from "./i18n";
+import {
+  ageFromDob,
+  suggestedCalorieGoal,
+  type ActivityLevel,
+  type Sex,
+  type WeeklyPace,
+} from "./calorieGoal";
 import { DateField, MenuField } from "./pickers";
 
 export function App() {
@@ -377,6 +384,8 @@ function ProfileSetup({ onDone }: { onDone: (me: Me) => void }) {
       return;
     }
     try {
+      const dailyGoalRaw = String(form.get("dailyGoalKcal") ?? "").trim().replace(",", ".");
+      const dailyGoalKcal = Math.round(Number(dailyGoalRaw));
       await api("/api/profile", {
         method: "PUT",
         body: JSON.stringify({
@@ -386,6 +395,7 @@ function ProfileSetup({ onDone }: { onDone: (me: Me) => void }) {
           weightKg: Number(form.get("weightKg")),
           activity: form.get("activity"),
           weeklyPace: form.get("weeklyPace"),
+          customGoalKcal: Number.isFinite(dailyGoalKcal) ? dailyGoalKcal : null,
         }),
       });
       const me = await api<Me>("/api/auth/me");
@@ -874,7 +884,7 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
   const canReadHealth = me.permissions.includes("appleHealth:read");
   useEffect(() => {
     Promise.all([
-      api<{ profile: Profile }>("/api/profile"),
+      api<{ profile: Profile; suggestedGoalKcal: number | null }>("/api/profile"),
       api<FastingState>("/api/fasting"),
     ]).then(([profileResponse, fastingResponse]) => {
       setProfile(profileResponse.profile);
@@ -913,7 +923,9 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
       return;
     }
     try {
-      await api("/api/profile", {
+      const dailyGoalRaw = String(form.get("dailyGoalKcal") ?? "").trim().replace(",", ".");
+      const dailyGoalKcal = Math.round(Number(dailyGoalRaw));
+      const next = await api<{ profile: Profile }>("/api/profile", {
         method: "PUT",
         body: JSON.stringify({
           sex: form.get("sex"),
@@ -922,8 +934,10 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
           weightKg: Number(form.get("weightKg")),
           activity: form.get("activity"),
           weeklyPace: form.get("weeklyPace"),
+          customGoalKcal: Number.isFinite(dailyGoalKcal) ? dailyGoalKcal : null,
         }),
       });
+      setProfile(next.profile);
       setError("");
     } catch (err) {
       setError(message(t, err));
@@ -1062,7 +1076,19 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
       </form>
       )}
       {profile && (
-        <form className="card" onSubmit={saveProfile} key={profile.dateOfBirth}>
+        <form
+          className="card"
+          onSubmit={saveProfile}
+          key={[
+            profile.dateOfBirth,
+            profile.sex,
+            profile.activity,
+            profile.weeklyPace,
+            profile.heightCm,
+            profile.weightKg,
+            profile.customGoalKcal,
+          ].join("|")}
+        >
           <h2>{t.profileTitle}</h2>
           <ProfileFields profile={profile} />
           {health?.connected && <p className="muted">{t.healthActivityNote}</p>}
@@ -1260,24 +1286,78 @@ function FoodForm() {
 
 function ProfileFields({ profile }: { profile?: Profile }) {
   const { t } = useI18n();
+  const [sex, setSex] = useState<Sex>(profile?.sex ?? "female");
+  const [dateOfBirth, setDateOfBirth] = useState(profile?.dateOfBirth ?? "");
+  const [heightCm, setHeightCm] = useState(profile?.heightCm != null ? String(profile.heightCm) : "");
+  const [weightKg, setWeightKg] = useState(profile?.weightKg != null ? String(profile.weightKg) : "");
+  const [activity, setActivity] = useState<ActivityLevel>(profile?.activity ?? "sedentary");
+  const [pace, setPace] = useState<WeeklyPace>(profile?.weeklyPace ?? "kg050");
+  const heightNum = Number(String(heightCm).replace(",", "."));
+  const weightNum = Number(String(weightKg).replace(",", "."));
+  const canSuggest =
+    dateOfBirth.length === 10 && Number.isFinite(heightNum) && heightNum > 0 && Number.isFinite(weightNum) && weightNum > 0;
+  const suggested = canSuggest
+    ? suggestedCalorieGoal({
+        sex,
+        weightKg: weightNum,
+        heightCm: heightNum,
+        age: ageFromDob(dateOfBirth),
+        activity,
+        pace,
+      })
+    : null;
+  const initialGoal = profile?.customGoalKcal ?? suggested;
+  const [dailyGoal, setDailyGoal] = useState(initialGoal != null ? String(initialGoal) : "");
+  const [touchedGoal, setTouchedGoal] = useState(profile?.customGoalKcal != null);
+
+  useEffect(() => {
+    if (touchedGoal || suggested == null) return;
+    setDailyGoal(String(suggested));
+  }, [suggested, touchedGoal]);
+
   return (
     <>
       <MenuField
         name="sex"
         label={t.sex}
-        defaultValue={profile?.sex ?? "female"}
+        value={sex}
+        onChange={(next) => setSex(next as Sex)}
         options={[
           { value: "female", label: t.female },
           { value: "male", label: t.male },
         ]}
       />
-      <DateField name="dateOfBirth" label={t.dateOfBirth} defaultValue={profile?.dateOfBirth} />
-      <label><span>{t.height}</span><input name="heightCm" inputMode="decimal" defaultValue={profile?.heightCm} required /></label>
-      <label><span>{t.weightKg}</span><input name="weightKg" inputMode="decimal" defaultValue={profile?.weightKg} required /></label>
+      <DateField
+        name="dateOfBirth"
+        label={t.dateOfBirth}
+        defaultValue={profile?.dateOfBirth}
+        onChange={setDateOfBirth}
+      />
+      <label>
+        <span>{t.height}</span>
+        <input
+          name="heightCm"
+          inputMode="decimal"
+          value={heightCm}
+          onChange={(event) => setHeightCm(event.target.value)}
+          required
+        />
+      </label>
+      <label>
+        <span>{t.weightKg}</span>
+        <input
+          name="weightKg"
+          inputMode="decimal"
+          value={weightKg}
+          onChange={(event) => setWeightKg(event.target.value)}
+          required
+        />
+      </label>
       <MenuField
         name="activity"
         label={t.activity}
-        defaultValue={profile?.activity ?? "sedentary"}
+        value={activity}
+        onChange={(next) => setActivity(next as ActivityLevel)}
         options={[
           { value: "sedentary", label: t.sedentary },
           { value: "light", label: t.light },
@@ -1289,13 +1369,41 @@ function ProfileFields({ profile }: { profile?: Profile }) {
       <MenuField
         name="weeklyPace"
         label={t.pace}
-        defaultValue={profile?.weeklyPace ?? "kg050"}
+        value={pace}
+        onChange={(next) => setPace(next as WeeklyPace)}
         options={[
           { value: "kg025", label: t.pace025 },
           { value: "kg050", label: t.pace050 },
           { value: "kg100", label: t.pace100 },
         ]}
       />
+      <label>
+        <span>{t.dailyGoal}</span>
+        <input
+          name="dailyGoalKcal"
+          inputMode="numeric"
+          value={dailyGoal}
+          onChange={(event) => {
+            setTouchedGoal(true);
+            setDailyGoal(event.target.value);
+          }}
+          required
+        />
+      </label>
+      {suggested != null && (
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            setTouchedGoal(false);
+            setDailyGoal(String(suggested));
+          }}
+        >
+          {t.useSuggested}
+          {touchedGoal ? ` (${suggested})` : ""}
+        </button>
+      )}
+      <p className="muted">{t.goalFloorNote}</p>
     </>
   );
 }

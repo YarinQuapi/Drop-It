@@ -1,6 +1,16 @@
 import type { Profile } from "../generated/prisma/client.js";
 import { prisma } from "./db.js";
-import { calorieGoal, effectiveGoalKcal, usesHealthBase, weightForGoal, type ActivityLevel, type Sex, type WeeklyPace } from "./domain.js";
+import {
+  calorieGoal,
+  calorieSafetyFloor,
+  effectiveGoalKcal,
+  suggestedCalorieGoal,
+  usesHealthBase,
+  weightForGoal,
+  type ActivityLevel,
+  type Sex,
+  type WeeklyPace,
+} from "./domain.js";
 import { ageOn, dayToUtcDate, firstOfMonth, jerusalemDay, todayJerusalem, utcDateToDay } from "./time.js";
 
 export const DEFAULT_STEP_GOAL = 10000;
@@ -42,12 +52,12 @@ export async function computeGoalKcal(userId: string, day: string, healthBase = 
   );
 }
 
-export function goalFromProfile(
+function goalInputs(
   profile: Profile,
   day: string,
   weighIns: { loggedAt: Date; weightKg: number }[],
   activity: ActivityLevel = profile.activity,
-): number {
+) {
   const weightKg = weightForGoal({
     day,
     profileWeightKg: profile.weightKg.toNumber(),
@@ -55,14 +65,43 @@ export function goalFromProfile(
     jerusalemDay,
     firstOfMonth,
   });
-  return calorieGoal({
+  return {
     sex: profile.sex as Sex,
     weightKg,
     heightCm: profile.heightCm.toNumber(),
     age: ageOn(utcDateToDay(profile.dateOfBirth), day),
     activity,
     pace: profile.weeklyPace as WeeklyPace,
-  });
+    customGoalKcal: profile.customGoalKcal,
+  };
+}
+
+export function goalFromProfile(
+  profile: Profile,
+  day: string,
+  weighIns: { loggedAt: Date; weightKg: number }[],
+  activity: ActivityLevel = profile.activity,
+): number {
+  return calorieGoal(goalInputs(profile, day, weighIns, activity));
+}
+
+export function suggestedGoalFromProfile(
+  profile: Profile,
+  day: string,
+  weighIns: { loggedAt: Date; weightKg: number }[] = [],
+  activity: ActivityLevel = profile.activity,
+): number {
+  const { customGoalKcal: _ignored, ...input } = goalInputs(profile, day, weighIns, activity);
+  return suggestedCalorieGoal(input);
+}
+
+export function safetyFloorFromProfile(
+  profile: Profile,
+  day: string,
+  weighIns: { loggedAt: Date; weightKg: number }[] = [],
+): number {
+  const input = goalInputs(profile, day, weighIns);
+  return calorieSafetyFloor(input);
 }
 
 async function ensureGoalRow(
@@ -73,7 +112,22 @@ async function ensureGoalRow(
   const existing = await prisma.dailyGoal.findUnique({
     where: { userId_day: { userId, day: dayToUtcDate(day) } },
   });
-  if (existing && !force) return { goalKcal: existing.goalKcal, healthAdjusted: existing.healthAdjusted };
+  if (existing && !force) {
+    const profile = await prisma.profile.findUnique({ where: { userId } });
+    if (profile) {
+      const weights = await prisma.weightEntry.findMany({ where: { userId } });
+      const weighIns = weights.map((entry) => ({
+        loggedAt: entry.loggedAt,
+        weightKg: entry.weightKg.toNumber(),
+      }));
+      const floor = safetyFloorFromProfile(profile, day, weighIns);
+      if (existing.goalKcal >= floor) {
+        return { goalKcal: existing.goalKcal, healthAdjusted: existing.healthAdjusted };
+      }
+    } else {
+      return { goalKcal: existing.goalKcal, healthAdjusted: existing.healthAdjusted };
+    }
+  }
   const settings = await loadHealthSettings(userId);
   const healthAdjusted = usesHealthBase({
     connected: settings.connected,

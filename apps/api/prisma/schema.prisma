@@ -107,9 +107,10 @@ model Profile {
   dateOfBirth DateTime      @db.Date
   heightCm    Decimal       @db.Decimal(5, 1)
   weightKg    Decimal       @db.Decimal(6, 2)
-  activity    ActivityLevel
-  weeklyPace  WeeklyPace
-  updatedAt   DateTime      @updatedAt
+  activity        ActivityLevel
+  weeklyPace      WeeklyPace
+  customGoalKcal  Int?
+  updatedAt       DateTime      @updatedAt
 }
 
 model DailyGoal {

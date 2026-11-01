@@ -11,6 +11,7 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import 'api.dart';
+import 'calorie_goal.dart';
 import 'copy.dart';
 import 'health.dart';
 import 'reminders.dart';
@@ -466,10 +467,40 @@ class _SetupScreenState extends State<SetupScreen> {
   DateTime? birthDate;
   final height = TextEditingController();
   final weight = TextEditingController();
+  final dailyGoal = TextEditingController();
   String activity = 'sedentary';
   String pace = 'kg050';
+  bool touchedGoal = false;
   bool profileStep = false;
   String error = '';
+
+  int? get _suggested {
+    final heightCm = parseDecimal(height.text);
+    final weightKg = parseDecimal(weight.text);
+    if (birthDate == null || heightCm == null || weightKg == null) return null;
+    return suggestedCalorieGoal(
+      sex: sex,
+      weightKg: weightKg,
+      heightCm: heightCm,
+      age: ageFromDob(birthDate!),
+      activity: activity,
+      pace: pace,
+    );
+  }
+
+  void _syncSuggestedGoal() {
+    if (touchedGoal) return;
+    final suggested = _suggested;
+    if (suggested != null) dailyGoal.text = '$suggested';
+  }
+
+  @override
+  void dispose() {
+    height.dispose();
+    weight.dispose();
+    dailyGoal.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -581,16 +612,30 @@ class _SetupScreenState extends State<SetupScreen> {
                     AppleMenuOption('female', t.female),
                     AppleMenuOption('male', t.male),
                   ],
-                  onChanged: (value) => setState(() => sex = value),
+                  onChanged: (value) => setState(() {
+                    sex = value;
+                    _syncSuggestedGoal();
+                  }),
                 ),
                 AppleDateField(
                   label: t.dateOfBirth,
                   value: birthDate,
                   doneLabel: t.done,
-                  onChanged: (value) => setState(() => birthDate = value),
+                  onChanged: (value) => setState(() {
+                    birthDate = value;
+                    _syncSuggestedGoal();
+                  }),
                 ),
-                decimalField(height, t.height),
-                decimalField(weight, t.weightKg),
+                decimalField(
+                  height,
+                  t.height,
+                  onChanged: (_) => setState(_syncSuggestedGoal),
+                ),
+                decimalField(
+                  weight,
+                  t.weightKg,
+                  onChanged: (_) => setState(_syncSuggestedGoal),
+                ),
                 AppleMenuField<String>(
                   label: t.activity,
                   value: activity,
@@ -600,7 +645,10 @@ class _SetupScreenState extends State<SetupScreen> {
                             AppleMenuOption(value, t.activityLabel(value)),
                       )
                       .toList(),
-                  onChanged: (value) => setState(() => activity = value),
+                  onChanged: (value) => setState(() {
+                    activity = value;
+                    _syncSuggestedGoal();
+                  }),
                 ),
                 AppleMenuField<String>(
                   label: t.pace,
@@ -610,7 +658,31 @@ class _SetupScreenState extends State<SetupScreen> {
                         (value) => AppleMenuOption(value, t.paceLabel(value)),
                       )
                       .toList(),
-                  onChanged: (value) => setState(() => pace = value),
+                  onChanged: (value) => setState(() {
+                    pace = value;
+                    _syncSuggestedGoal();
+                  }),
+                ),
+                decimalField(
+                  dailyGoal,
+                  t.dailyGoal,
+                  onChanged: (_) => setState(() => touchedGoal = true),
+                ),
+                if (_suggested != null)
+                  OutlinedButton(
+                    onPressed: () => setState(() {
+                      touchedGoal = false;
+                      dailyGoal.text = '${_suggested!}';
+                    }),
+                    child: Text(
+                      touchedGoal
+                          ? '${t.useSuggested} (${_suggested!})'
+                          : t.useSuggested,
+                    ),
+                  ),
+                Text(
+                  t.goalFloorNote,
+                  style: TextStyle(color: context.apple.labelSecondary),
                 ),
                 if (error.isNotEmpty) ErrorText(error),
                 FilledButton(
@@ -619,7 +691,10 @@ class _SetupScreenState extends State<SetupScreen> {
                       : () async {
                           final heightCm = parseDecimal(height.text);
                           final weightKg = parseDecimal(weight.text);
-                          if (heightCm == null || weightKg == null) {
+                          final goalKcal = parseDecimal(dailyGoal.text)?.round();
+                          if (heightCm == null ||
+                              weightKg == null ||
+                              goalKcal == null) {
                             setState(() => error = t.error('invalid_body'));
                             return;
                           }
@@ -634,6 +709,7 @@ class _SetupScreenState extends State<SetupScreen> {
                                 'weightKg': weightKg,
                                 'activity': activity,
                                 'weeklyPace': pace,
+                                'customGoalKcal': goalKcal,
                               },
                             );
                             widget.onReady(
@@ -2231,11 +2307,252 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         if (healthState != null) _healthCard(context),
         if (profile != null)
-          Text(
-            '${t.weightKg}: ${profile!['weightKg']} · ${t.goal}',
-            style: TextStyle(color: apple.labelSecondary),
+          ProfileEditor(
+            key: ValueKey(
+              [
+                profile!['sex'],
+                profile!['dateOfBirth'],
+                profile!['heightCm'],
+                profile!['weightKg'],
+                profile!['activity'],
+                profile!['weeklyPace'],
+                profile!['customGoalKcal'],
+              ].join('|'),
+            ),
+            api: widget.api,
+            t: t,
+            profile: profile!,
+            onSaved: () async {
+              await load();
+              await widget.sync();
+            },
           ),
       ],
+    );
+  }
+}
+
+class ProfileEditor extends StatefulWidget {
+  const ProfileEditor({
+    super.key,
+    required this.api,
+    required this.t,
+    required this.profile,
+    required this.onSaved,
+  });
+  final Api api;
+  final Copy t;
+  final Map<String, dynamic> profile;
+  final Future<void> Function() onSaved;
+
+  @override
+  State<ProfileEditor> createState() => _ProfileEditorState();
+}
+
+class _ProfileEditorState extends State<ProfileEditor> {
+  late String sex;
+  late DateTime? birthDate;
+  late final TextEditingController height;
+  late final TextEditingController weight;
+  late final TextEditingController dailyGoal;
+  late String activity;
+  late String pace;
+  bool touchedGoal = false;
+  String error = '';
+
+  int? get _suggested {
+    final heightCm = parseDecimal(height.text);
+    final weightKg = parseDecimal(weight.text);
+    if (birthDate == null || heightCm == null || weightKg == null) return null;
+    return suggestedCalorieGoal(
+      sex: sex,
+      weightKg: weightKg,
+      heightCm: heightCm,
+      age: ageFromDob(birthDate!),
+      activity: activity,
+      pace: pace,
+    );
+  }
+
+  void _syncSuggestedGoal() {
+    if (touchedGoal) return;
+    final suggested = _suggested;
+    if (suggested != null) dailyGoal.text = '$suggested';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.profile;
+    sex = (p['sex'] as String?) ?? 'female';
+    birthDate = DateTime.tryParse((p['dateOfBirth'] as String?) ?? '');
+    height = TextEditingController(text: '${p['heightCm'] ?? ''}');
+    weight = TextEditingController(text: '${p['weightKg'] ?? ''}');
+    activity = (p['activity'] as String?) ?? 'sedentary';
+    pace = (p['weeklyPace'] as String?) ?? 'kg050';
+    final custom = p['customGoalKcal'];
+    touchedGoal = custom != null;
+    final seed = custom ?? _suggested;
+    dailyGoal = TextEditingController(text: seed != null ? '$seed' : '');
+  }
+
+  @override
+  void dispose() {
+    height.dispose();
+    weight.dispose();
+    dailyGoal.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(Gaps.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              t.profileTitle,
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: Gaps.md),
+            AppleMenuField<String>(
+              label: t.sex,
+              value: sex,
+              options: [
+                AppleMenuOption('female', t.female),
+                AppleMenuOption('male', t.male),
+              ],
+              onChanged: (value) => setState(() {
+                sex = value;
+                _syncSuggestedGoal();
+              }),
+            ),
+            const SizedBox(height: Gaps.md),
+            AppleDateField(
+              label: t.dateOfBirth,
+              value: birthDate,
+              doneLabel: t.done,
+              onChanged: (value) => setState(() {
+                birthDate = value;
+                _syncSuggestedGoal();
+              }),
+            ),
+            const SizedBox(height: Gaps.md),
+            decimalField(
+              height,
+              t.height,
+              onChanged: (_) => setState(_syncSuggestedGoal),
+            ),
+            const SizedBox(height: Gaps.md),
+            decimalField(
+              weight,
+              t.weightKg,
+              onChanged: (_) => setState(_syncSuggestedGoal),
+            ),
+            const SizedBox(height: Gaps.md),
+            AppleMenuField<String>(
+              label: t.activity,
+              value: activity,
+              options: ['sedentary', 'light', 'moderate', 'very', 'extra']
+                  .map(
+                    (value) => AppleMenuOption(value, t.activityLabel(value)),
+                  )
+                  .toList(),
+              onChanged: (value) => setState(() {
+                activity = value;
+                _syncSuggestedGoal();
+              }),
+            ),
+            const SizedBox(height: Gaps.md),
+            AppleMenuField<String>(
+              label: t.pace,
+              value: pace,
+              options: ['kg025', 'kg050', 'kg100']
+                  .map((value) => AppleMenuOption(value, t.paceLabel(value)))
+                  .toList(),
+              onChanged: (value) => setState(() {
+                pace = value;
+                _syncSuggestedGoal();
+              }),
+            ),
+            const SizedBox(height: Gaps.md),
+            decimalField(
+              dailyGoal,
+              t.dailyGoal,
+              onChanged: (_) => setState(() => touchedGoal = true),
+            ),
+            if (_suggested != null) ...[
+              const SizedBox(height: Gaps.sm),
+              OutlinedButton(
+                onPressed: () => setState(() {
+                  touchedGoal = false;
+                  dailyGoal.text = '${_suggested!}';
+                }),
+                child: Text(
+                  touchedGoal
+                      ? '${t.useSuggested} (${_suggested!})'
+                      : t.useSuggested,
+                ),
+              ),
+            ],
+            const SizedBox(height: Gaps.sm),
+            Text(
+              t.goalFloorNote,
+              style: TextStyle(color: context.apple.labelSecondary),
+            ),
+            if (error.isNotEmpty) ...[
+              const SizedBox(height: Gaps.sm),
+              ErrorText(error),
+            ],
+            const SizedBox(height: Gaps.md),
+            FilledButton(
+              onPressed: birthDate == null
+                  ? null
+                  : () async {
+                      final heightCm = parseDecimal(height.text);
+                      final weightKg = parseDecimal(weight.text);
+                      final goalKcal = parseDecimal(dailyGoal.text)?.round();
+                      if (heightCm == null ||
+                          weightKg == null ||
+                          goalKcal == null) {
+                        setState(() => error = t.error('invalid_body'));
+                        return;
+                      }
+                      try {
+                        await widget.api.send(
+                          'PUT',
+                          '/api/profile',
+                          body: {
+                            'sex': sex,
+                            'dateOfBirth': formatIsoDate(birthDate!),
+                            'heightCm': heightCm,
+                            'weightKg': weightKg,
+                            'activity': activity,
+                            'weeklyPace': pace,
+                            'customGoalKcal': goalKcal,
+                          },
+                        );
+                        if (mounted) setState(() => error = '');
+                        await widget.onSaved();
+                      } on ApiException catch (err) {
+                        if (mounted) {
+                          setState(() => error = t.error(err.code));
+                        }
+                      } catch (_) {
+                        if (mounted) {
+                          setState(() => error = t.error('invalid_body'));
+                        }
+                      }
+                    },
+              child: Text(t.save),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2691,9 +3008,14 @@ Widget hourPicker(String label, int value, ValueChanged<int> onChanged) {
   );
 }
 
-Widget decimalField(TextEditingController controller, String label) {
+Widget decimalField(
+  TextEditingController controller,
+  String label, {
+  ValueChanged<String>? onChanged,
+}) {
   return TextField(
     controller: controller,
+    onChanged: onChanged,
     decoration: InputDecoration(labelText: label),
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
     inputFormatters: const [DecimalInputFormatter()],

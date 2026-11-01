@@ -1,12 +1,20 @@
 import { Router } from "express";
 import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
+import {
+  calorieSafetyFloor,
+  suggestedCalorieGoal,
+  weightForGoal,
+  type ActivityLevel,
+  type Sex,
+  type WeeklyPace,
+} from "../domain.js";
 import { asyncRoute } from "../http.js";
-import { ensureGoal, resolveGoal } from "../goals.js";
+import { ensureGoal, resolveGoal, suggestedGoalFromProfile } from "../goals.js";
 import { num } from "../present.js";
 import { requirePermission } from "../rbac.js";
 import { profileSchema, settingsSchema } from "../schemas.js";
-import { dayToUtcDate, todayJerusalem, utcDateToDay } from "../time.js";
+import { ageOn, dayToUtcDate, firstOfMonth, jerusalemDay, todayJerusalem, utcDateToDay } from "../time.js";
 
 export const profileRouter = Router();
 profileRouter.use(requireUser);
@@ -18,11 +26,21 @@ profileRouter.get(
     const user = currentUser(res);
     const profile = await prisma.profile.findUnique({ where: { userId: user.id } });
     if (!profile) {
-      res.json({ profile: null, goalKcal: null });
+      res.json({ profile: null, goalKcal: null, suggestedGoalKcal: null });
       return;
     }
-    const goal = await resolveGoal(user.id, todayJerusalem(), { future: false });
-    res.json({ profile: presentProfile(profile), goalKcal: goal?.goalKcal ?? null });
+    const today = todayJerusalem();
+    const weights = await prisma.weightEntry.findMany({ where: { userId: user.id } });
+    const weighIns = weights.map((entry) => ({
+      loggedAt: entry.loggedAt,
+      weightKg: entry.weightKg.toNumber(),
+    }));
+    const goal = await resolveGoal(user.id, today, { future: false });
+    res.json({
+      profile: presentProfile(profile),
+      goalKcal: goal?.goalKcal ?? null,
+      suggestedGoalKcal: suggestedGoalFromProfile(profile, today, weighIns),
+    });
   }),
 );
 
@@ -32,6 +50,37 @@ profileRouter.put(
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const body = profileSchema.parse(req.body);
+    const today = todayJerusalem();
+    const weights = await prisma.weightEntry.findMany({ where: { userId: user.id } });
+    const weighIns = weights.map((entry) => ({
+      loggedAt: entry.loggedAt,
+      weightKg: entry.weightKg.toNumber(),
+    }));
+    const weightKg = weightForGoal({
+      day: today,
+      profileWeightKg: body.weightKg,
+      weighIns,
+      jerusalemDay,
+      firstOfMonth,
+    });
+    const age = ageOn(body.dateOfBirth, today);
+    const person = {
+      sex: body.sex as Sex,
+      weightKg,
+      heightCm: body.heightCm,
+      age,
+      activity: body.activity as ActivityLevel,
+      pace: body.weeklyPace as WeeklyPace,
+    };
+    const floor = calorieSafetyFloor(person);
+    const suggested = suggestedCalorieGoal(person);
+
+    let customGoalKcal: number | null = null;
+    if (body.customGoalKcal !== undefined && body.customGoalKcal !== null) {
+      const clamped = Math.max(body.customGoalKcal, floor);
+      customGoalKcal = clamped === suggested ? null : clamped;
+    }
+
     const profile = await prisma.profile.upsert({
       where: { userId: user.id },
       create: {
@@ -42,6 +91,7 @@ profileRouter.put(
         weightKg: body.weightKg,
         activity: body.activity,
         weeklyPace: body.weeklyPace,
+        customGoalKcal,
       },
       update: {
         sex: body.sex,
@@ -50,11 +100,16 @@ profileRouter.put(
         weightKg: body.weightKg,
         activity: body.activity,
         weeklyPace: body.weeklyPace,
+        customGoalKcal,
       },
     });
-    await ensureGoal(user.id, todayJerusalem(), true);
-    const goal = await resolveGoal(user.id, todayJerusalem(), { future: false });
-    res.json({ profile: presentProfile(profile), goalKcal: goal?.goalKcal ?? null });
+    await ensureGoal(user.id, today, true);
+    const goal = await resolveGoal(user.id, today, { future: false });
+    res.json({
+      profile: presentProfile(profile),
+      goalKcal: goal?.goalKcal ?? null,
+      suggestedGoalKcal: suggested,
+    });
   }),
 );
 
@@ -92,6 +147,7 @@ function presentProfile(profile: {
   weightKg: { toNumber(): number };
   activity: "sedentary" | "light" | "moderate" | "very" | "extra";
   weeklyPace: "kg025" | "kg050" | "kg100";
+  customGoalKcal: number | null;
 }) {
   return {
     sex: profile.sex,
@@ -100,5 +156,6 @@ function presentProfile(profile: {
     weightKg: num(profile.weightKg),
     activity: profile.activity,
     weeklyPace: profile.weeklyPace,
+    customGoalKcal: profile.customGoalKcal,
   };
 }

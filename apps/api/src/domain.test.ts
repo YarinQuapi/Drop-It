@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   approximateEndHour,
   calorieGoal,
+  calorieSafetyFloor,
   checkPassword,
   daySucceeded,
   effectiveGoalKcal,
@@ -13,6 +14,7 @@ import {
   resolveBarcode,
   scaleNutrients,
   serializeReminderOffsets,
+  suggestedCalorieGoal,
   summarizeWeekDays,
   usesHealthBase,
   validatePassword,
@@ -23,7 +25,8 @@ import { DEFAULT_USER_PERMISSIONS, OPERATIONS, resolvePermissions } from "./rbac
 import { changePasswordSchema, fastingSchema, foodSchema, healthSettingsSchema, healthSyncSchema, profileSchema, signupSchema } from "./schemas.js";
 import { addDays, ageOn, canonicalDay, firstOfMonth, jerusalemMidnight, jerusalemParts, jerusalemWallTime, sundayOf, todayJerusalem } from "./time.js";
 
-test("mifflin goal uses activity, deficit, floor, then nearest kcal", () => {
+test("mifflin goal uses activity, deficit, safety floor, then nearest kcal", () => {
+  // BMR 1780; sedentary TDEE - 550 = 1586 → raised to BMR floor
   assert.equal(
     calorieGoal({
       sex: "male",
@@ -33,9 +36,10 @@ test("mifflin goal uses activity, deficit, floor, then nearest kcal", () => {
       activity: "sedentary",
       pace: "kg050",
     }),
-    1586,
+    1780,
   );
 
+  // BMR ~1370; moderate TDEE - 750 ≈ 1374 → above floor
   assert.equal(
     calorieGoal({
       sex: "female",
@@ -45,9 +49,10 @@ test("mifflin goal uses activity, deficit, floor, then nearest kcal", () => {
       activity: "moderate",
       pace: "kg100",
     }),
-    1024,
+    1374,
   );
 
+  // Tiny frame: BMR ~877 → sex floor 1200
   assert.equal(
     calorieGoal({
       sex: "female",
@@ -57,8 +62,37 @@ test("mifflin goal uses activity, deficit, floor, then nearest kcal", () => {
       activity: "extra",
       pace: "kg100",
     }),
-    800,
+    1200,
   );
+});
+
+test("safety floor is max of BMR and sex minimum", () => {
+  assert.equal(
+    calorieSafetyFloor({ sex: "female", weightKg: 40, heightCm: 150, age: 60 }),
+    1200,
+  );
+  assert.equal(
+    calorieSafetyFloor({ sex: "male", weightKg: 80, heightCm: 180, age: 30 }),
+    1780,
+  );
+  assert.equal(
+    calorieSafetyFloor({ sex: "male", weightKg: 55, heightCm: 160, age: 70 }),
+    1500,
+  );
+});
+
+test("custom goal is kept when above the floor and raised when below", () => {
+  const person = {
+    sex: "female" as const,
+    weightKg: 70,
+    heightCm: 165,
+    age: 40,
+    activity: "moderate" as const,
+    pace: "kg050" as const,
+  };
+  assert.equal(calorieGoal({ ...person, customGoalKcal: 1800 }), 1800);
+  assert.equal(calorieGoal({ ...person, customGoalKcal: 1000 }), 1370);
+  assert.equal(suggestedCalorieGoal(person), calorieGoal(person));
 });
 
 test("food nutrients keep fractional grams", () => {
@@ -427,18 +461,18 @@ test("health-adjusted goal is the sedentary base plus active kcal, never the act
   const person = { sex: "male", weightKg: 80, heightCm: 180, age: 30, pace: "kg050" } as const;
   const sedentary = calorieGoal({ ...person, activity: "sedentary" });
   const moderate = calorieGoal({ ...person, activity: "moderate" });
-  assert.equal(sedentary, 1586);
-  assert.equal(effectiveGoalKcal(sedentary, 420, true), 2006);
+  assert.equal(sedentary, 1780);
+  assert.equal(effectiveGoalKcal(sedentary, 420, true), 2200);
   assert.ok(effectiveGoalKcal(sedentary, 420, true) < moderate + 420);
-  assert.equal(effectiveGoalKcal(sedentary, 420, false), 1586);
-  assert.equal(effectiveGoalKcal(sedentary, -50, true), 1586);
-  assert.equal(effectiveGoalKcal(sedentary, 99.6, true), 1686);
+  assert.equal(effectiveGoalKcal(sedentary, 420, false), 1780);
+  assert.equal(effectiveGoalKcal(sedentary, -50, true), 1780);
+  assert.equal(effectiveGoalKcal(sedentary, 99.6, true), 1880);
 });
 
-test("the 800 kcal floor applies to the sedentary base before active kcal is added", () => {
+test("the safety floor applies to the sedentary base before active kcal is added", () => {
   const base = calorieGoal({ sex: "female", weightKg: 40, heightCm: 150, age: 60, activity: "sedentary", pace: "kg100" });
-  assert.equal(base, 800);
-  assert.equal(effectiveGoalKcal(base, 300, true), 1100);
+  assert.equal(base, 1200);
+  assert.equal(effectiveGoalKcal(base, 300, true), 1500);
 });
 
 test("a health-adjusted day succeeds against the effective goal", () => {

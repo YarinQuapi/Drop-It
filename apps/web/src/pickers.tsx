@@ -181,7 +181,17 @@ function formatBirthDate(iso: string, lang: Lang): string {
   }).format(date);
 }
 
-export function DateField({ name, label, defaultValue }: { name: string; label: string; defaultValue?: string }) {
+export function DateField({
+  name,
+  label,
+  defaultValue,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  defaultValue?: string;
+  onChange?: (value: string) => void;
+}) {
   const { t, lang } = useI18n();
   const labelId = useId();
   const valueId = useId();
@@ -220,6 +230,7 @@ export function DateField({ name, label, defaultValue }: { name: string; label: 
             lang={lang}
             onChange={(next) => {
               setValue(next);
+              onChange?.(next);
               setOpen(false);
             }}
           />

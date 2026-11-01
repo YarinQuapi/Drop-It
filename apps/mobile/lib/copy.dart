@@ -70,6 +70,12 @@ class Copy {
   String get weightKg => pick('Weight (kg)', 'משקל (ק״ג)');
   String get activity => pick('Activity', 'פעילות');
   String get pace => pick('Weekly pace', 'קצב שבועי');
+  String get dailyGoal => pick('Daily calories (kcal)', 'קלוריות ליום');
+  String get useSuggested => pick('Use suggested', 'השתמש בהצעה');
+  String get goalFloorNote => pick(
+    'Goals never go below your resting metabolism or 1,200 kcal (women) / 1,500 kcal (men).',
+    'היעד לא יורד מתחת לקצב חילוף החומרים במנוחה או 1,200 קק״ל (נשים) / 1,500 קק״ל (גברים).',
+  );
   String get save => pick('Save', 'שמירה');
   String get goal => pick('Calorie goal', 'יעד קלוריות');
   String get eaten => pick('Eaten', 'נאכל');
@@ -228,7 +234,7 @@ class Copy {
   String get extra => pick('Extra active', 'פעיל במיוחד');
   String get pace025 => pick('0.25 kg per week', '0.25 ק״ג בשבוע');
   String get pace050 => pick('0.5 kg per week', '0.5 ק״ג בשבוע');
-  String get pace100 => pick('1 kg per week', '1 ק״ג בשבוע');
+  String get pace100 => pick('0.75 kg per week', '0.75 ק״ג בשבוע');
 
   String error(String code) => switch (code) {
     'email_taken' => pick(

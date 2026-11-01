@@ -9,7 +9,7 @@ export const ACTIVITY_MULTIPLIER = {
 export const PACE_DEFICIT = {
   kg025: 275,
   kg050: 550,
-  kg100: 1100,
+  kg100: 750,
 } as const;
 
 export type ActivityLevel = keyof typeof ACTIVITY_MULTIPLIER;
@@ -160,7 +160,15 @@ export function mifflinStJeor(input: { sex: Sex; weightKg: number; heightCm: num
   return input.sex === "male" ? base + 5 : base - 161;
 }
 
-export function calorieGoal(input: {
+export function sexCalorieFloor(sex: Sex): number {
+  return sex === "male" ? 1500 : 1200;
+}
+
+export function calorieSafetyFloor(input: { sex: Sex; weightKg: number; heightCm: number; age: number }): number {
+  return Math.max(Math.round(mifflinStJeor(input)), sexCalorieFloor(input.sex));
+}
+
+export function suggestedCalorieGoal(input: {
   sex: Sex;
   weightKg: number;
   heightCm: number;
@@ -169,9 +177,24 @@ export function calorieGoal(input: {
   pace: WeeklyPace;
 }): number {
   const resting = mifflinStJeor(input);
-  let raw = resting * ACTIVITY_MULTIPLIER[input.activity] - PACE_DEFICIT[input.pace];
-  if (raw < 800) raw = 800;
-  return Math.round(raw);
+  const raw = resting * ACTIVITY_MULTIPLIER[input.activity] - PACE_DEFICIT[input.pace];
+  return Math.round(Math.max(raw, calorieSafetyFloor(input)));
+}
+
+export function calorieGoal(input: {
+  sex: Sex;
+  weightKg: number;
+  heightCm: number;
+  age: number;
+  activity: ActivityLevel;
+  pace: WeeklyPace;
+  customGoalKcal?: number | null;
+}): number {
+  const floor = calorieSafetyFloor(input);
+  if (input.customGoalKcal != null) {
+    return Math.round(Math.max(input.customGoalKcal, floor));
+  }
+  return suggestedCalorieGoal(input);
 }
 
 export function weightForGoal(input: {
