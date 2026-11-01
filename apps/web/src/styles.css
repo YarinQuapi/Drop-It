@@ -36,6 +36,8 @@
   /* Elevation */
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   --card-border: transparent;
+  --control-shadow: 0 1px 1px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.14);
+  --control-shadow-pressed: 0 1px 1px rgba(0, 0, 0, 0.2);
 
   /* Radii */
   --radius-sm: 10px;
@@ -85,6 +87,8 @@
     --fast-gradient: linear-gradient(160deg, #ff9f0a 0%, #e8590c 100%);
     --card-shadow: none;
     --card-border: var(--separator);
+    --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 14px rgba(0, 0, 0, 0.4);
+    --control-shadow-pressed: 0 1px 1px rgba(0, 0, 0, 0.55);
   }
 }
 
@@ -110,6 +114,8 @@
   --fast-gradient: linear-gradient(160deg, #ff9f0a 0%, #e8590c 100%);
   --card-shadow: none;
   --card-border: var(--separator);
+  --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 14px rgba(0, 0, 0, 0.4);
+  --control-shadow-pressed: 0 1px 1px rgba(0, 0, 0, 0.55);
 }
 
 * { box-sizing: border-box; }
@@ -155,6 +161,12 @@ a.secondary {
   justify-content: center;
   gap: var(--gap-sm);
   text-align: center;
+  box-shadow: var(--control-shadow);
+  transition:
+    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 140ms ease,
+    background-color 180ms ease,
+    opacity 140ms ease;
 }
 
 button.secondary,
@@ -189,13 +201,14 @@ button.apple-button {
 }
 
 button.danger { background: var(--accent-danger); color: #ffffff; }
-button:disabled { opacity: 0.4; cursor: not-allowed; }
+button:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
 
 button.quiet {
   background: transparent;
   color: var(--accent-danger-text);
   padding: 0 var(--gap-sm);
   font-weight: 500;
+  box-shadow: none;
 }
 
 button.icon {
@@ -206,6 +219,7 @@ button.icon {
   display: grid;
   gap: 5px;
   place-content: center;
+  box-shadow: none;
 }
 
 button.icon span {
@@ -303,6 +317,7 @@ main.shell { padding-top: var(--gap-xl); }
   text-decoration: none;
   font-weight: 500;
   border-radius: var(--radius-control);
+  box-shadow: none;
 }
 
 .nav-panel a.active { color: var(--accent-primary); background: var(--accent-tint); font-weight: 600; }
@@ -429,18 +444,22 @@ label:has(> input[type="checkbox"]) {
   color: var(--label-primary);
   font-weight: 500;
   font-size: 0.8125rem;
+  box-shadow: none;
 }
 
 .segmented button[aria-pressed="true"] {
   background: var(--bg-elevated);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--control-shadow);
 }
 
-.segmented button:not(:disabled):hover,
-.segmented button:not(:disabled):active {
+.segmented button:not(:disabled):hover {
   transform: none;
-  filter: none;
+}
+
+.segmented button:not(:disabled):active {
+  transform: scale(0.96);
+  transition-duration: 60ms;
 }
 
 .row { display: flex; gap: var(--gap-sm); align-items: end; margin-bottom: var(--gap-md); }
@@ -629,33 +648,30 @@ a,
     color 180ms ease,
     border-color 180ms ease,
     box-shadow 180ms ease,
-    filter 180ms ease,
     transform 160ms ease,
     opacity 180ms ease;
-}
-
-@media (hover: hover) {
-  button:not(.icon):not(.quiet):not(:disabled):hover,
-  a.button:hover,
-  a.secondary:hover {
-    filter: brightness(1.06);
-  }
 }
 
 button:not(.icon):not(.quiet):not(:disabled):active,
 a.button:active,
 a.secondary:active {
-  transform: scale(0.98);
-  opacity: 0.8;
-  filter: none;
+  transform: scale(0.96);
+  box-shadow: var(--control-shadow-pressed);
+  opacity: 1;
+  transition-duration: 60ms;
 }
 
 .nav-panel.nav-panel button:not(:disabled):hover,
-.nav-panel.nav-panel button:not(:disabled):active,
 .nav-panel.nav-panel a:hover {
   background: var(--fill-hover);
   transform: none;
-  filter: none;
+}
+
+.nav-panel.nav-panel button:not(:disabled):active,
+.nav-panel.nav-panel a:active {
+  background: var(--fill-hover);
+  transform: scale(0.98);
+  transition-duration: 60ms;
 }
 .nav-panel.nav-panel a.active:hover { background: var(--accent-tint); }
 
@@ -664,7 +680,13 @@ a.secondary:active {
 }
 
 button.quiet:hover { opacity: 0.7; }
-button.quiet:active { transform: none; }
+button.quiet:active { transform: scale(0.96); opacity: 0.65; box-shadow: none; }
+
+button.icon:active {
+  transform: scale(0.9);
+  opacity: 0.65;
+  transition-duration: 60ms;
+}
 
 .entry:hover,
 .week-day:hover { background: var(--fill-hover); }
@@ -936,19 +958,31 @@ button.calendar-day[aria-pressed="true"] {
 }
 
 
+button.picker-trigger,
+button.picker-option,
+button.calendar-nav,
+button.calendar-title,
+button.calendar-day {
+  box-shadow: none;
+}
+
 button.picker-trigger:not(.icon):not(:disabled):hover,
-button.picker-trigger:not(.icon):not(:disabled):active,
 button.picker-option:not(.icon):not(:disabled):hover,
-button.picker-option:not(.icon):not(:disabled):active,
 button.calendar-nav:not(.icon):not(:disabled):hover,
-button.calendar-nav:not(.icon):not(:disabled):active,
 button.calendar-title:not(.icon):not(:disabled):hover,
-button.calendar-title:not(.icon):not(:disabled):active,
-button.calendar-day:not(.icon):not(:disabled):hover,
-button.calendar-day:not(.icon):not(:disabled):active {
-  filter: none;
+button.calendar-day:not(.icon):not(:disabled):hover {
   transform: none;
   opacity: 1;
+}
+
+button.picker-trigger:not(.icon):not(:disabled):active,
+button.picker-option:not(.icon):not(:disabled):active,
+button.calendar-nav:not(.icon):not(:disabled):active,
+button.calendar-title:not(.icon):not(:disabled):active,
+button.calendar-day:not(.icon):not(:disabled):active {
+  transform: scale(0.975);
+  opacity: 1;
+  transition-duration: 60ms;
 }
 
 button.picker-option:not(.icon):not(:disabled):hover,

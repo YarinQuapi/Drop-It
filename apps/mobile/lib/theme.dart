@@ -141,6 +141,27 @@ ThemeData buildAppleTheme(Brightness brightness) {
   );
   const controlSize = Size(0, Gaps.hit);
   const buttonText = TextStyle(fontSize: 17, fontWeight: FontWeight.w600);
+  const pressShadow = Color(0x40000000);
+  final pressOverlay = WidgetStateProperty.resolveWith<Color?>((states) {
+    if (states.contains(WidgetState.pressed)) return const Color(0x33000000);
+    return null;
+  });
+  final pressElevation = WidgetStateProperty.resolveWith<double>((states) {
+    if (states.contains(WidgetState.disabled) || states.contains(WidgetState.pressed)) {
+      return 0;
+    }
+    return 3;
+  });
+  Widget pressScale(BuildContext context, Set<WidgetState> states, Widget? child) {
+    final pressed = states.contains(WidgetState.pressed);
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    return AnimatedScale(
+      scale: pressed ? 0.96 : 1,
+      duration: reduce ? Duration.zero : Duration(milliseconds: pressed ? 60 : 150),
+      curve: Curves.easeOutCubic,
+      child: child,
+    );
+  }
 
   return ThemeData(
     useMaterial3: true,
@@ -149,7 +170,8 @@ ThemeData buildAppleTheme(Brightness brightness) {
     scaffoldBackgroundColor: c.groupedBg,
     canvasColor: c.groupedBg,
     extensions: [c],
-    splashFactory: NoSplash.splashFactory,
+    splashFactory: const PressFadeFactory(),
+    splashColor: const Color(0x33000000),
     highlightColor: c.accentTint,
     popupMenuTheme: PopupMenuThemeData(
       color: c.cardBg,
@@ -251,32 +273,63 @@ ThemeData buildAppleTheme(Brightness brightness) {
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        minimumSize: controlSize,
-        shape: controlShape,
-        textStyle: buttonText,
-        backgroundColor: c.accentPrimary,
-        foregroundColor: Colors.white,
-        disabledBackgroundColor: c.tertiaryFill,
-        disabledForegroundColor: c.labelSecondary,
+      style:
+          FilledButton.styleFrom(
+            minimumSize: controlSize,
+            shape: controlShape,
+            textStyle: buttonText,
+            backgroundColor: c.accentPrimary,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: c.tertiaryFill,
+            disabledForegroundColor: c.labelSecondary,
+            shadowColor: pressShadow,
+            surfaceTintColor: Colors.transparent,
+          ).copyWith(
+        elevation: pressElevation,
+        overlayColor: pressOverlay,
+        backgroundBuilder: pressScale,
+        animationDuration: const Duration(milliseconds: 90),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
-      style: OutlinedButton.styleFrom(
-        minimumSize: controlSize,
-        shape: controlShape,
-        textStyle: buttonText,
-        side: BorderSide.none,
-        backgroundColor: c.accentTint,
-        foregroundColor: c.accentPrimary,
+      style:
+          OutlinedButton.styleFrom(
+            minimumSize: controlSize,
+            shape: controlShape,
+            textStyle: buttonText,
+            side: BorderSide.none,
+            backgroundColor: c.accentTint,
+            foregroundColor: c.accentPrimary,
+            shadowColor: pressShadow,
+            surfaceTintColor: Colors.transparent,
+          ).copyWith(
+        elevation: pressElevation,
+        overlayColor: pressOverlay,
+        backgroundBuilder: pressScale,
+        animationDuration: const Duration(milliseconds: 90),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(
-        minimumSize: controlSize,
-        shape: controlShape,
-        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
-        foregroundColor: c.accentPrimary,
+      style:
+          TextButton.styleFrom(
+            minimumSize: controlSize,
+            shape: controlShape,
+            textStyle: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w500,
+            ),
+            foregroundColor: c.accentPrimary,
+          ).copyWith(
+        overlayColor: pressOverlay,
+        backgroundBuilder: pressScale,
+        animationDuration: const Duration(milliseconds: 90),
+      ),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom().copyWith(
+        overlayColor: pressOverlay,
+        backgroundBuilder: pressScale,
+        animationDuration: const Duration(milliseconds: 90),
       ),
     ),
     switchTheme: SwitchThemeData(
@@ -347,6 +400,223 @@ class ErrorText extends StatelessWidget {
 }
 
 /// One line of the password checklist.
+/// Darkens a control only while it is held, then fades the tint away.
+class PressFadeFactory extends InteractiveInkFeatureFactory {
+  const PressFadeFactory();
+
+  @override
+  InteractiveInkFeature create({
+    required MaterialInkController controller,
+    required RenderBox referenceBox,
+    required Offset position,
+    required Color color,
+    required TextDirection textDirection,
+    bool containedInkWell = false,
+    RectCallback? rectCallback,
+    BorderRadius? borderRadius,
+    ShapeBorder? customBorder,
+    double? radius,
+    VoidCallback? onRemoved,
+  }) {
+    return _PressFade(
+      controller: controller,
+      referenceBox: referenceBox,
+      color: color,
+      textDirection: textDirection,
+      customBorder: customBorder,
+      borderRadius: borderRadius,
+      rectCallback: rectCallback,
+      onRemoved: onRemoved,
+    );
+  }
+}
+
+class _PressFade extends InteractiveInkFeature {
+  _PressFade({
+    required super.controller,
+    required super.referenceBox,
+    required super.color,
+    required TextDirection textDirection,
+    super.customBorder,
+    super.onRemoved,
+    BorderRadius? borderRadius,
+    RectCallback? rectCallback,
+  }) : _borderRadius = borderRadius ?? BorderRadius.zero,
+       _textDirection = textDirection,
+       _rectCallback = rectCallback {
+    _alpha = AnimationController(value: 1, duration: const Duration(milliseconds: 140), vsync: controller.vsync)
+      ..addListener(controller.markNeedsPaint)
+      ..addStatusListener(_onStatus);
+    controller.addInkFeature(this);
+  }
+
+  final BorderRadius _borderRadius;
+  final TextDirection _textDirection;
+  final RectCallback? _rectCallback;
+  late final AnimationController _alpha;
+  bool _released = false;
+  bool _disposed = false;
+
+  @override
+  void confirm() => _release();
+
+  @override
+  void cancel() => _release();
+
+  void _release() {
+    if (_released || _disposed) return;
+    _released = true;
+    if (_alpha.isDismissed) {
+      dispose();
+    } else {
+      _alpha.reverse();
+    }
+  }
+
+  void _onStatus(AnimationStatus status) {
+    if (status.isDismissed && _released) dispose();
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _alpha.dispose();
+    super.dispose();
+  }
+
+  @override
+  void paintFeature(Canvas canvas, Matrix4 transform) {
+    final paint = Paint()..color = color.withValues(alpha: color.a * _alpha.value);
+    final origin = MatrixUtils.getAsTranslation(transform);
+    final rect = _rectCallback != null ? _rectCallback() : Offset.zero & referenceBox.size;
+    void draw(Rect target) {
+      canvas.save();
+      if (customBorder != null) {
+        canvas.clipPath(customBorder!.getOuterPath(target, textDirection: _textDirection));
+      }
+      final radius = _borderRadius.resolve(_textDirection);
+      canvas.drawRRect(
+        RRect.fromRectAndCorners(
+          target,
+          topLeft: radius.topLeft,
+          topRight: radius.topRight,
+          bottomLeft: radius.bottomLeft,
+          bottomRight: radius.bottomRight,
+        ),
+        paint,
+      );
+      canvas.restore();
+    }
+
+    if (origin == null) {
+      canvas.save();
+      canvas.transform(transform.storage);
+      draw(rect);
+      canvas.restore();
+    } else {
+      draw(rect.shift(origin));
+    }
+  }
+}
+
+/// Sinks while held so a tap on a custom control is visible.
+class Pressable extends StatefulWidget {
+  const Pressable({
+    super.key,
+    required this.onTap,
+    required this.child,
+    this.label,
+  });
+
+  final VoidCallback onTap;
+  final Widget child;
+  final String? label;
+
+  @override
+  State<Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<Pressable> {
+  bool _down = false;
+
+  void _setDown(bool value) {
+    if (_down == value) return;
+    setState(() => _down = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    return Semantics(
+      button: true,
+      label: widget.label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => _setDown(true),
+        onTapUp: (_) => _setDown(false),
+        onTapCancel: () => _setDown(false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _down ? 0.97 : 1,
+          duration: reduce
+              ? Duration.zero
+              : Duration(milliseconds: _down ? 60 : 150),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: reduce
+                ? Duration.zero
+                : const Duration(milliseconds: 120),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(Radii.control),
+              boxShadow: _down
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x26000000),
+                        blurRadius: 1,
+                        offset: Offset(0, 1),
+                      ),
+                    ]
+                  : const [
+                      BoxShadow(
+                        color: Color(0x24000000),
+                        blurRadius: 8,
+                        offset: Offset(0, 3),
+                      ),
+                      BoxShadow(
+                        color: Color(0x14000000),
+                        blurRadius: 1,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+            ),
+            child: Stack(
+              children: [
+                widget.child,
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _down ? 1 : 0,
+                      duration: reduce ? Duration.zero : const Duration(milliseconds: 90),
+                      child: const DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Color(0x24000000),
+                          borderRadius: BorderRadius.all(Radius.circular(Radii.control)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AppleMenuOption<T> {
   const AppleMenuOption(this.value, this.label);
   final T value;
@@ -442,34 +712,30 @@ class _AppleMenuFieldState<T> extends State<AppleMenuField<T>> {
     final selected = widget.options.firstWhere(
       (option) => option.value == widget.value,
     );
-    return Semantics(
-      button: true,
+    return Pressable(
+      key: _fieldKey,
       label: widget.label,
-      child: GestureDetector(
-        key: _fieldKey,
-        behavior: HitTestBehavior.opaque,
-        onTap: _openMenu,
-        child: InputDecorator(
-          isEmpty: false,
-          isFocused: _open,
-          decoration: InputDecoration(labelText: widget.label)
-              .applyDefaults(Theme.of(context).inputDecorationTheme),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  selected.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 17),
-                ),
+      onTap: _openMenu,
+      child: InputDecorator(
+        isEmpty: false,
+        isFocused: _open,
+        decoration: InputDecoration(labelText: widget.label)
+            .applyDefaults(Theme.of(context).inputDecorationTheme),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                selected.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 17),
               ),
-              Icon(
-                Icons.keyboard_arrow_down_rounded,
-                color: apple.labelSecondary,
-              ),
-            ],
-          ),
+            ),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: apple.labelSecondary,
+            ),
+          ],
         ),
       ),
     );
@@ -575,28 +841,24 @@ class AppleDateField extends StatelessWidget {
   Widget build(BuildContext context) {
     final apple = context.apple;
     final text = value == null ? null : formatDisplayDate(value!);
-    return Semantics(
-      button: true,
+    return Pressable(
       label: label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _pick(context),
-        child: InputDecorator(
-          isEmpty: text == null,
-          decoration: InputDecoration(labelText: label)
-              .applyDefaults(Theme.of(context).inputDecorationTheme),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(text ?? '', style: const TextStyle(fontSize: 17)),
-              ),
-              Icon(
-                Icons.calendar_today_outlined,
-                size: 18,
-                color: apple.labelSecondary,
-              ),
-            ],
-          ),
+      onTap: () => _pick(context),
+      child: InputDecorator(
+        isEmpty: text == null,
+        decoration: InputDecoration(labelText: label)
+            .applyDefaults(Theme.of(context).inputDecorationTheme),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(text ?? '', style: const TextStyle(fontSize: 17)),
+            ),
+            Icon(
+              Icons.calendar_today_outlined,
+              size: 18,
+              color: apple.labelSecondary,
+            ),
+          ],
         ),
       ),
     );

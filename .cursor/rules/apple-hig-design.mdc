@@ -46,3 +46,4 @@ Container(color: context.apple.cardBg, padding: const EdgeInsets.all(Gaps.lg))
 ```
 - New copy strings must be added in both English and Hebrew (`apps/web/src/i18n.tsx`, `apps/mobile/lib/copy.dart`); layouts must work in RTL (use logical properties / `Directionality`).
 - Respect `prefers-reduced-motion` (web) and disabled animations (Flutter).
+- Buttons, including settings actions and menu fields, show press feedback: they sink (scale plus shadow) while held. Reduced motion keeps the state change and drops the timed animation.

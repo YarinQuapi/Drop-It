@@ -36,6 +36,7 @@ final class HealthSync {
   private let isoFormatter: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
     return formatter
   }()
 
@@ -76,12 +77,20 @@ final class HealthSync {
         DispatchQueue.main.async { result(success && error == nil) }
       }
     case "readPayload":
-      readPayload { payload in
+      // After an app update HealthKit treats read access as not determined until this
+      // process asks again, even when the Health app still shows access as granted.
+      // The sheet only appears if iOS still needs a decision.
+      readPayload(prompt: true) { outcome in
         DispatchQueue.main.async {
-          if let payload = payload {
+          switch outcome {
+          case .success(let payload):
             result(payload)
-          } else {
-            result(FlutterError(code: "read_failed", message: "Could not read Apple Health", details: nil))
+          case .failure(let error):
+            result(FlutterError(
+              code: error == .authorization ? "authorization_denied" : "read_failed",
+              message: "Could not read Apple Health",
+              details: nil
+            ))
           }
         }
       }
@@ -109,81 +118,165 @@ final class HealthSync {
 
   // MARK: Reading
 
-  /// Collects everything new since the last committed sync. The weight anchor only moves forward
-  /// when `commit` is called after a successful upload, so a failed upload is retried.
-  func readPayload(completion: @escaping ([String: Any]?) -> Void) {
-    let group = DispatchGroup()
-    var failed = false
+  private enum ReadFailure: Equatable {
+    case authorization
+    case failed
+  }
+
+  private final class ReadState {
+    private let lock = NSLock()
+    private var recorded: ReadFailure?
     var weights: [[String: Any]] = []
     var deleted: [String] = []
-    var newAnchor: HKQueryAnchor?
+    var anchor: HKQueryAnchor?
     var steps: [String: Double] = [:]
     var exercise: [String: Double] = [:]
     var energy: [String: Double] = [:]
+
+    func note(_ failure: ReadFailure) {
+      lock.lock()
+      if recorded != .authorization { recorded = failure }
+      lock.unlock()
+    }
+
+    var failure: ReadFailure? {
+      lock.lock()
+      defer { lock.unlock() }
+      return recorded
+    }
+  }
+
+  /// Collects everything new since the last committed sync. The weight anchor only moves forward
+  /// when `commit` is called after a successful upload, so a failed upload is retried.
+  ///
+  /// `prompt` asks HealthKit to confirm access first. Foreground syncs need this: after an update,
+  /// queries fail with "not determined" until `requestAuthorization` runs again.
+  private func readPayload(prompt: Bool = false, completion: @escaping (Result<[String: Any], ReadFailure>) -> Void) {
+    let read: () -> Void = { [weak self] in
+      guard let self = self else {
+        completion(.failure(.failed))
+        return
+      }
+      let anchor = self.loadAnchor()
+      self.collect(anchor: anchor) { result in
+        guard case .failure(let error) = result, error != .authorization, anchor != nil else {
+          completion(result)
+          return
+        }
+        // A saved anchor from before the update can make the weight query fail.
+        // Read from the beginning once; commit replaces the anchor after a successful upload.
+        self.collect(anchor: nil, completion: completion)
+      }
+    }
+    guard prompt else {
+      read()
+      return
+    }
+    refreshAuthorization(completion: read)
+  }
+
+  private func refreshAuthorization(completion: @escaping () -> Void) {
+    let ask = { [weak self] in
+      guard let self = self, HKHealthStore.isHealthDataAvailable() else {
+        completion()
+        return
+      }
+      self.store.requestAuthorization(toShare: nil, read: self.readTypes) { _, _ in
+        DispatchQueue.main.async(execute: completion)
+      }
+    }
+    if Thread.isMainThread {
+      ask()
+    } else {
+      DispatchQueue.main.async(execute: ask)
+    }
+  }
+
+  private func collect(anchor: HKQueryAnchor?, completion: @escaping (Result<[String: Any], ReadFailure>) -> Void) {
+    let group = DispatchGroup()
+    let state = ReadState()
+    let now = Date()
+    // HealthKit aligns day buckets to the device calendar. Label those buckets as Jerusalem
+    // days afterwards so the payload matches the server.
+    let queryCalendar = Calendar.current
+    let anchorDate = queryCalendar.startOfDay(for: now)
+    let queryStart = queryCalendar.date(byAdding: .day, value: -HealthSync.windowDays, to: anchorDate) ?? anchorDate
+    let dayInterval = DateComponents(day: 1)
 
     group.enter()
     let weightQuery = HKAnchoredObjectQuery(
       type: weightType,
       predicate: nil,
-      anchor: loadAnchor(),
+      anchor: anchor,
       limit: HKObjectQueryNoLimit
-    ) { [weak self] _, added, removed, anchor, error in
+    ) { [weak self] _, added, removed, newAnchor, error in
       defer { group.leave() }
       guard let self = self else { return }
-      if error != nil {
-        failed = true
+      if let failure = self.readFailure(error) {
+        state.note(failure)
         return
       }
+      var weights: [[String: Any]] = []
       for case let sample as HKQuantitySample in added ?? [] {
-        let kilograms = sample.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo))
+        let externalId = sample.uuid.uuidString
+        let kilograms = (sample.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo)) * 100).rounded() / 100
+        let loggedAt = self.isoFormatter.string(from: sample.startDate)
+        guard externalId.count <= 64, kilograms.isFinite, kilograms > 0, kilograms <= 500, !loggedAt.isEmpty else { continue }
         weights.append([
-          "externalId": sample.uuid.uuidString,
-          "weightKg": (kilograms * 100).rounded() / 100,
-          "loggedAt": self.isoFormatter.string(from: sample.startDate),
+          "externalId": externalId,
+          "weightKg": kilograms,
+          "loggedAt": loggedAt,
         ])
       }
-      deleted = (removed ?? []).map { $0.uuid.uuidString }
-      newAnchor = anchor
+      state.weights = weights
+      state.deleted = (removed ?? []).map { $0.uuid.uuidString }.filter { !$0.isEmpty && $0.count <= 64 }
+      state.anchor = newAnchor
     }
     store.execute(weightQuery)
 
-    let now = Date()
-    let today = calendar.startOfDay(for: now)
-    let start = calendar.date(byAdding: .day, value: -(HealthSync.windowDays - 1), to: today)!
-
-    func collect(_ type: HKQuantityType, unit: HKUnit, into assign: @escaping ([String: Double]) -> Void) {
+    func collectDaily(_ type: HKQuantityType, unit: HKUnit, into assign: @escaping ([String: Double]) -> Void) {
       group.enter()
-      let predicate = HKQuery.predicateForSamples(withStart: start, end: now, options: [])
+      let predicate = HKQuery.predicateForSamples(withStart: queryStart, end: now, options: [])
       let query = HKStatisticsCollectionQuery(
         quantityType: type,
         quantitySamplePredicate: predicate,
         options: .cumulativeSum,
-        anchorDate: today,
-        intervalComponents: DateComponents(day: 1)
+        anchorDate: anchorDate,
+        intervalComponents: dayInterval
       )
       query.initialResultsHandler = { [weak self] _, collection, error in
         defer { group.leave() }
         guard let self = self else { return }
-        if let error = error, (error as? HKError)?.code != .errorNoData {
-          failed = true
+        if let failure = self.readFailure(error) {
+          state.note(failure)
           return
         }
         var values: [String: Double] = [:]
-        collection?.enumerateStatistics(from: start, to: now) { statistics, _ in
-          values[self.dayString(statistics.startDate)] = statistics.sumQuantity()?.doubleValue(for: unit) ?? 0
+        collection?.enumerateStatistics(from: queryStart, to: now) { statistics, _ in
+          let key = self.dayString(statistics.startDate)
+          values[key, default: 0] += statistics.sumQuantity()?.doubleValue(for: unit) ?? 0
         }
         assign(values)
       }
       store.execute(query)
     }
 
-    collect(stepType, unit: .count()) { steps = $0 }
-    collect(exerciseType, unit: .minute()) { exercise = $0 }
-    collect(energyType, unit: .kilocalorie()) { energy = $0 }
+    collectDaily(stepType, unit: .count()) { state.steps = $0 }
+    collectDaily(exerciseType, unit: .minute()) { state.exercise = $0 }
+    collectDaily(energyType, unit: .kilocalorie()) { state.energy = $0 }
 
     group.notify(queue: .global()) { [weak self] in
-      guard let self = self, !failed else {
-        completion(nil)
+      guard let self = self else {
+        completion(.failure(.failed))
+        return
+      }
+      if let failure = state.failure {
+        completion(.failure(failure))
+        return
+      }
+      let today = self.calendar.startOfDay(for: now)
+      guard let start = self.calendar.date(byAdding: .day, value: -(HealthSync.windowDays - 1), to: today) else {
+        completion(.failure(.failed))
         return
       }
       var days: [[String: Any]] = []
@@ -192,24 +285,43 @@ final class HealthSync {
         let key = self.dayString(date)
         days.append([
           "day": key,
-          "steps": (steps[key] ?? 0).rounded(),
-          "exerciseMinutes": (exercise[key] ?? 0).rounded(),
-          "activeKcal": (energy[key] ?? 0).rounded(),
+          "steps": self.bounded(state.steps[key] ?? 0, limit: 1_000_000),
+          "exerciseMinutes": self.bounded(state.exercise[key] ?? 0, limit: 1440),
+          "activeKcal": self.bounded(state.energy[key] ?? 0, limit: 20_000),
         ])
       }
       let token = UUID().uuidString
-      if let anchor = newAnchor {
+      if let newAnchor = state.anchor {
         self.stateLock.lock()
-        self.pendingAnchors[token] = anchor
+        self.pendingAnchors[token] = newAnchor
         self.stateLock.unlock()
       }
-      completion([
-        "weights": weights,
-        "deletedWeightIds": deleted,
+      completion(.success([
+        "weights": state.weights,
+        "deletedWeightIds": state.deleted,
         "days": days,
         "token": token,
-      ])
+      ]))
     }
+  }
+
+  /// `nil` when there is no error, or the only error is an empty series.
+  private func readFailure(_ error: Error?) -> ReadFailure? {
+    guard let error else { return nil }
+    let ns = error as NSError
+    guard ns.domain == HKErrorDomain else { return .failed }
+    if ns.code == HKError.Code.errorNoData.rawValue { return nil }
+    if ns.code == HKError.Code.errorAuthorizationDenied.rawValue
+        || ns.code == HKError.Code.errorAuthorizationNotDetermined.rawValue {
+      return .authorization
+    }
+    return .failed
+  }
+
+  /// Clamps a daily total into the range the sync API accepts.
+  private func bounded(_ value: Double, limit: Double) -> Double {
+    guard value.isFinite else { return 0 }
+    return min(max(value, 0), limit).rounded()
   }
 
   private func dayString(_ date: Date) -> String {
@@ -277,8 +389,8 @@ final class HealthSync {
         return
       }
       let finished = DispatchSemaphore(value: 0)
-      self.readPayload { payload in
-        guard let payload = payload else {
+      self.readPayload { outcome in
+        guard case let .success(payload) = outcome else {
           finished.signal()
           return
         }

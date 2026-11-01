@@ -5,6 +5,16 @@ import 'package:flutter/services.dart';
 
 import 'api.dart';
 
+/// Thrown when a foreground sync cannot finish.
+///
+/// [denied] is only set when HealthKit itself rejected the read. Other failures used to be
+/// reported as a missing permission.
+class HealthSyncException implements Exception {
+  const HealthSyncException({required this.denied});
+
+  final bool denied;
+}
+
 /// Apple Health bridge. HealthKit only exists on iOS, so every call is a no-op elsewhere.
 ///
 /// Swift (`ios/Runner/HealthSync.swift`) reads samples; this class uploads them with the
@@ -32,12 +42,12 @@ class AppleHealth {
   }
 
   /// Shows the system permission sheet, arms background delivery, and runs the first sync.
-  /// Returns false when Health is unavailable or the sheet did not finish.
+  /// Returns false when Health is unavailable. A false result from the sheet is not treated as
+  /// denial: HealthKit does not report read access, and the following sync is what proves it.
   Future<bool> connect() async {
     if (!await isAvailable()) return false;
     try {
-      final done = await _channel.invokeMethod<bool>('requestAuthorization') ?? false;
-      if (!done) return false;
+      await _channel.invokeMethod<bool>('requestAuthorization');
       await _channel.invokeMethod('start', {'baseUrl': api.baseUrl});
     } on PlatformException {
       return false;
@@ -73,19 +83,35 @@ class AppleHealth {
 
   /// Reads everything new since the last committed sync and uploads it. A failure leaves the
   /// weight anchor in place, so the next call retries the same samples.
+  ///
+  /// Throws [HealthSyncException] when Apple Health cannot be read, and [ApiException] when
+  /// the upload is rejected. Callers decide which message to show.
   Future<bool> sync() async {
     if (!supported) return false;
     try {
-      final payload = Map<String, dynamic>.from(await _channel.invokeMethod<Map>('readPayload') as Map);
-      final weights = (payload['weights'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      final raw = await _channel.invokeMethod<Map>('readPayload');
+      if (raw == null) throw const HealthSyncException(denied: false);
+      final payload = Map<String, dynamic>.from(raw);
+      final weights = (payload['weights'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
       final deleted = (payload['deletedWeightIds'] as List).cast<String>();
-      final days = (payload['days'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      final days = (payload['days'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
 
       for (var i = 0; i < weights.length; i += _chunk) {
-        await _post({'weights': weights.sublist(i, _min(i + _chunk, weights.length))});
+        await _post({
+          'weights': weights.sublist(i, _min(i + _chunk, weights.length)),
+        });
       }
       for (var i = 0; i < deleted.length; i += _chunk) {
-        await _post({'deletedWeightIds': deleted.sublist(i, _min(i + _chunk, deleted.length))});
+        await _post({
+          'deletedWeightIds': deleted.sublist(
+            i,
+            _min(i + _chunk, deleted.length),
+          ),
+        });
       }
       // The last request always carries the days so lastSyncedAt moves even with nothing new.
       await _post({'days': days});
@@ -93,21 +119,27 @@ class AppleHealth {
       await _channel.invokeMethod('commit', {'token': payload['token']});
       synced.value++;
       return true;
-    } on PlatformException {
-      return false;
+    } on HealthSyncException {
+      rethrow;
+    } on PlatformException catch (err) {
+      throw HealthSyncException(denied: err.code == 'authorization_denied');
     } on ApiException {
-      return false;
+      rethrow;
     } catch (_) {
-      return false;
+      throw const HealthSyncException(denied: false);
     }
   }
 
   Future<void> _post(Map<String, dynamic> body) async {
-    await api.send('POST', '/api/apple-health/sync', body: {
-      'weights': body['weights'] ?? <Object>[],
-      'deletedWeightIds': body['deletedWeightIds'] ?? <Object>[],
-      'days': body['days'] ?? <Object>[],
-    });
+    await api.send(
+      'POST',
+      '/api/apple-health/sync',
+      body: {
+        'weights': body['weights'] ?? <Object>[],
+        'deletedWeightIds': body['deletedWeightIds'] ?? <Object>[],
+        'days': body['days'] ?? <Object>[],
+      },
+    );
   }
 
   static int _min(int a, int b) => a < b ? a : b;

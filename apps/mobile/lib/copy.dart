@@ -107,6 +107,10 @@ class Copy {
     'Apple Health access was not granted.',
     'לא ניתנה גישה ל-Apple Health.',
   );
+  String get healthSyncFailed => pick(
+    'Apple Health could not be synced. Try again.',
+    'לא ניתן לסנכרן את Apple Health. נסו שוב.',
+  );
   String get healthSource => 'Apple Health';
   String get manualSource => pick('Manual', 'ידני');
   String get barcode => pick('Barcode', 'ברקוד');

@@ -1842,6 +1842,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } on ApiException catch (err) {
       ok = false;
       if (mounted) healthError = widget.t.error(err.code);
+    } on HealthSyncException catch (err) {
+      ok = false;
+      if (mounted) {
+        healthError = err.denied
+            ? widget.t.healthDenied
+            : widget.t.healthSyncFailed;
+      }
     }
     if (!mounted) return;
     setState(() {
