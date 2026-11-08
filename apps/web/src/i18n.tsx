@@ -54,7 +54,7 @@ const en = {
   settings: "Settings",
   language: "Language",
   english: "English",
-  hebrew: "Hebrew",
+  hebrew: "עברית",
   fastingQuestion: "Do you want to use intermittent fasting?",
   yes: "Yes",
   no: "No",
@@ -91,14 +91,13 @@ const en = {
   goal: "Calorie goal",
   eaten: "Eaten",
   remaining: "Remaining",
-  estimate: "This number is an estimate from the Mifflin–St Jeor formula.",
+  estimate: "Estimated from your body stats.",
   appleHealth: "Apple Health",
   healthSteps: "Steps",
   healthExercise: "Exercise",
   healthMinutes: "min",
   healthActiveKcal: "Active calories",
   healthBaseGoal: "Base goal",
-  healthEstimate: "Today's goal is a sedentary base plus the active calories from Apple Health.",
   healthLastSync: "Last sync",
   healthNever: "Never",
   healthConnected: "Connected",
@@ -115,7 +114,24 @@ const en = {
   healthSource: "Apple Health",
   manualSource: "Manual",
   barcode: "Barcode",
+  enterBarcode: "Enter barcode manually",
   lookUp: "Look up",
+  searchFoods: "Search foods or enter a barcode",
+  recentFoods: "Recent",
+  noMatches: "No matching foods.",
+  cancel: "Cancel",
+  account: "Account",
+  undo: "Undo",
+  kg: "kg",
+  tagline: "Calories and fasting, simply.",
+  stepOf: "Step {n} of 2",
+  chooseSex: "Choose your sex – it changes the calorie formula.",
+  goalAutoHint: "Filled in once the fields above are set",
+  fastingQuestionHint: "You can change this any time in Settings.",
+  removedEntry: "Removed {name}",
+  off: "Off",
+  measuredAs: "Measured as",
+  optional: "Optional",
   log: "Log",
   menu: "Menu",
   amount: "Amount",
@@ -149,6 +165,7 @@ const en = {
   kcal: "kcal",
   delete: "Remove",
   success: "Goal met",
+  onTrack: "On track",
   missed: "Over goal",
   notYet: "Not counted yet",
   calorieIntake: "Calorie intake",
@@ -160,6 +177,8 @@ const en = {
   graphEmpty: "Log a weight to see the graph.",
   autoPublish: "Publish new foods by default",
   fasting: "Intermittent fasting",
+  fastingTab: "Fasting",
+  moreDetails: "More details",
   fastingOn: "Fasting is on",
   startFast: "Start fast",
   stopFast: "Stop fast",
@@ -206,7 +225,9 @@ const en = {
   future_day: "You can log food only through today.",
   fasting_disabled: "Turn fasting on before starting the timer.",
   timer_running: "A timer is already running.",
-  server_error: "Something went wrong.",
+  server_error: "Something went wrong on our side. Try again in a moment.",
+  network_error: "Can’t reach the server. Check your connection and try again.",
+  timeout: "The server took too long to respond. Try again.",
   forbidden: "You don't have permission for this action.",
   not_found: "Not found.",
 };
@@ -302,14 +323,13 @@ const he: typeof en = {
   goal: "יעד קלוריות",
   eaten: "נאכל",
   remaining: "נותר",
-  estimate: "המספר הזה הוא אומדן לפי נוסחת מיפלין–סנט ג׳ור.",
+  estimate: "אומדן לפי נתוני הגוף שלכם.",
   appleHealth: "Apple Health",
   healthSteps: "צעדים",
   healthExercise: "פעילות גופנית",
   healthMinutes: "דק׳",
   healthActiveKcal: "קלוריות פעילות",
   healthBaseGoal: "יעד בסיס",
-  healthEstimate: "היעד של היום הוא בסיס יושבני בתוספת הקלוריות הפעילות מ-Apple Health.",
   healthLastSync: "סנכרון אחרון",
   healthNever: "אף פעם",
   healthConnected: "מחובר",
@@ -326,7 +346,24 @@ const he: typeof en = {
   healthSource: "Apple Health",
   manualSource: "ידני",
   barcode: "ברקוד",
+  enterBarcode: "הזנת ברקוד ידנית",
   lookUp: "חיפוש",
+  searchFoods: "חיפוש מזון או הזנת ברקוד",
+  recentFoods: "אחרונים",
+  noMatches: "לא נמצא מזון תואם.",
+  cancel: "ביטול",
+  account: "חשבון",
+  undo: "ביטול פעולה",
+  kg: "ק״ג",
+  tagline: "קלוריות וצום, בפשטות.",
+  stepOf: "שלב {n} מתוך 2",
+  chooseSex: "בחרו מין – זה משנה את נוסחת הקלוריות.",
+  goalAutoHint: "יתמלא אחרי שתמלאו את השדות למעלה",
+  fastingQuestionHint: "אפשר לשנות את זה בכל עת בהגדרות.",
+  removedEntry: "{name} הוסר",
+  off: "כבוי",
+  measuredAs: "נמדד לפי",
+  optional: "רשות",
   log: "רישום",
   menu: "תפריט",
   amount: "כמות",
@@ -360,6 +397,7 @@ const he: typeof en = {
   kcal: "קק״ל",
   delete: "הסרה",
   success: "היעד הושג",
+  onTrack: "בדרך ליעד",
   missed: "מעל היעד",
   notYet: "עדיין לא נספר",
   calorieIntake: "צריכת קלוריות",
@@ -371,6 +409,8 @@ const he: typeof en = {
   graphEmpty: "רשמו משקל כדי לראות את הגרף.",
   autoPublish: "פרסום מזונות חדשים כברירת מחדל",
   fasting: "צום לסירוגין",
+  fastingTab: "צום",
+  moreDetails: "פרטים נוספים",
   fastingOn: "הצום פעיל",
   startFast: "התחל צום",
   stopFast: "עצור צום",
@@ -417,7 +457,9 @@ const he: typeof en = {
   future_day: "אפשר לרשום מזון רק עד היום.",
   fasting_disabled: "הפעילו צום לפני התחלת הטיימר.",
   timer_running: "טיימר כבר רץ.",
-  server_error: "משהו השתבש.",
+  server_error: "משהו השתבש אצלנו. נסו שוב בעוד רגע.",
+  network_error: "אין חיבור לשרת. בדקו את החיבור ונסו שוב.",
+  timeout: "השרת לא הגיב בזמן. נסו שוב.",
   forbidden: "אין לך הרשאה לבצע פעולה זו.",
   not_found: "לא נמצא.",
 };
@@ -428,12 +470,28 @@ export type Lang = "en" | "he";
 const dictionaries: Record<Lang, Copy> = { en, he };
 const LanguageContext = createContext<{ lang: Lang; t: Copy; setLang: (lang: Lang) => void } | null>(null);
 
+const LANG_KEY = "dropit.lang";
+
+function initialLang(): Lang {
+  try {
+    const stored = localStorage.getItem(LANG_KEY);
+    if (stored === "en" || stored === "he") return stored;
+  } catch {
+    // Storage blocked (private mode): fall back to the browser language.
+  }
+  return navigator.language.toLowerCase().startsWith("he") ? "he" : "en";
+}
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const initial = navigator.language.toLowerCase().startsWith("he") ? "he" : "en";
-  const [lang, setLang] = useState<Lang>(initial);
+  const [lang, setLang] = useState<Lang>(initialLang);
   useEffect(() => {
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "he" ? "rtl" : "ltr";
+    try {
+      localStorage.setItem(LANG_KEY, lang);
+    } catch {
+      // Not critical: the signed-in language comes from the account.
+    }
   }, [lang]);
   const value = useMemo(() => ({ lang, t: dictionaries[lang], setLang }), [lang]);
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

@@ -145,7 +145,7 @@ async function ensureGoalRow(
   return { goalKcal, healthAdjusted };
 }
 
-/** Returns the frozen base goal for a day (the sedentary base when the day is health adjusted). */
+/** Returns the frozen food budget for a day (the sedentary base when the day is health adjusted). */
 export async function ensureGoal(userId: string, day: string, force = false): Promise<number | null> {
   const row = await ensureGoalRow(userId, day, force);
   return row?.goalKcal ?? null;
@@ -164,8 +164,9 @@ export type DayGoal = {
 };
 
 /**
- * The goal the UI works with: the frozen base plus, for health-adjusted days, that day's
- * Apple active kcal. Future days use the profile estimate and have no Health data.
+ * The goal the UI works with. Health-adjusted days keep the frozen sedentary base.
+ * Active calories are returned for display and do not increase the food budget.
+ * Future days use the profile estimate and have no Health data.
  */
 export async function resolveGoal(
   userId: string,

@@ -247,10 +247,13 @@ function Calendar({ value, lang, onChange }: { value: string; lang: Lang; onChan
   const selected = parseIso(value);
   const initial = selected ?? new Date(today.getFullYear() - 25, today.getMonth(), 1);
   const [cursor, setCursor] = useState(() => new Date(initial.getFullYear(), initial.getMonth(), 1));
-  const [pickingYear, setPickingYear] = useState(!selected);
+  // Year -> month -> day: reaching a birthday month takes one tap, not many arrow taps.
+  const [step, setStep] = useState<"year" | "month" | "day">(selected ? "day" : "year");
+  const pickingYear = step === "year";
   const selectedYearRef = useRef<HTMLButtonElement>(null);
   const locale = lang === "he" ? "he-IL" : "en-GB";
   const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(cursor);
+  const monthName = new Intl.DateTimeFormat(locale, { month: "short" });
   const weekday = new Intl.DateTimeFormat(locale, { weekday: "narrow" });
   const weekdays = Array.from({ length: 7 }, (_, index) => weekday.format(new Date(2023, 0, 1 + index)));
   const min = new Date(1900, 0, 1);
@@ -285,8 +288,8 @@ function Calendar({ value, lang, onChange }: { value: string; lang: Lang; onChan
         <button type="button" className="calendar-nav" aria-label={t.prevMonth} onClick={() => shiftMonth(-1)}>
           <span className="chevron prev" />
         </button>
-        <button type="button" className="calendar-title" aria-expanded={pickingYear} onClick={() => setPickingYear((open) => !open)}>
-          {pickingYear ? t.chooseYear : monthLabel}
+        <button type="button" className="calendar-title" aria-expanded={step !== "day"} onClick={() => setStep((current) => (current === "day" ? "year" : "day"))}>
+          {step === "year" ? t.chooseYear : step === "month" ? String(cursor.getFullYear()) : monthLabel}
         </button>
         <button type="button" className="calendar-nav" aria-label={t.nextMonth} onClick={() => shiftMonth(1)}>
           <span className="chevron next" />
@@ -303,7 +306,7 @@ function Calendar({ value, lang, onChange }: { value: string; lang: Lang; onChan
                 aria-selected={year === cursor.getFullYear()}
                 onClick={() => {
                   setCursor(new Date(year, cursor.getMonth(), 1));
-                  setPickingYear(false);
+                  setStep("month");
                 }}
               >
                 {year}
@@ -311,6 +314,28 @@ function Calendar({ value, lang, onChange }: { value: string; lang: Lang; onChan
             </li>
           ))}
         </ul>
+      ) : step === "month" ? (
+        <div className="month-grid calendar-body">
+          {Array.from({ length: 12 }, (_, month) => {
+            const date = new Date(cursor.getFullYear(), month, 1);
+            const future = date > today;
+            return (
+              <button
+                type="button"
+                key={month}
+                className="picker-option"
+                disabled={future}
+                aria-selected={month === cursor.getMonth()}
+                onClick={() => {
+                  setCursor(date);
+                  setStep("day");
+                }}
+              >
+                {monthName.format(date)}
+              </button>
+            );
+          })}
+        </div>
       ) : (
         <div className="calendar-grid calendar-body">
           {weekdays.map((name, index) => <span className="calendar-dow" key={index}>{name}</span>)}

@@ -3,12 +3,65 @@ import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
 import { resolveBarcode } from "../domain.js";
 import { asyncRoute, HttpError } from "../http.js";
-import { presentFood } from "../present.js";
+import { pickRecentFoods, pickSearchResults } from "../food-search.js";
+import { num, presentFood } from "../present.js";
 import { requirePermission } from "../rbac.js";
 import { foodSchema, foodUpdateSchema } from "../schemas.js";
 
 export const foodsRouter = Router();
 foodsRouter.use(requireUser);
+
+foodsRouter.get(
+  "/search",
+  requirePermission("foods:read"),
+  asyncRoute(async (req, res) => {
+    const user = currentUser(res);
+    const query = String(req.query.q ?? "").trim().slice(0, 64);
+    if (query.length < 2) {
+      res.json({ foods: [] });
+      return;
+    }
+    const rows = await prisma.food.findMany({
+      where: {
+        AND: [
+          { OR: [{ ownerId: user.id }, { published: true }] },
+          { OR: [{ name: { contains: query } }, { barcode: { startsWith: query } }] },
+        ],
+      },
+      orderBy: { name: "asc" },
+      take: 60,
+    });
+    res.json({ foods: pickSearchResults(rows, user.id, 20).map((food) => presentFood(food, user.id)) });
+  }),
+);
+
+foodsRouter.get(
+  "/recent",
+  requirePermission("foods:read"),
+  asyncRoute(async (_req, res) => {
+    const user = currentUser(res);
+    const entries = await prisma.diaryEntry.findMany({
+      where: { userId: user.id, foodId: { not: null } },
+      orderBy: { createdAt: "desc" },
+      select: { foodId: true, amount: true },
+      take: 200,
+    });
+    const recent = pickRecentFoods(entries.map((entry) => ({ foodId: entry.foodId, amount: num(entry.amount) })), 10);
+    const foods = await prisma.food.findMany({
+      where: {
+        id: { in: recent.map((item) => item.foodId) },
+        OR: [{ ownerId: user.id }, { published: true }],
+      },
+    });
+    const byId = new Map(foods.map((food) => [food.id, food]));
+    res.json({
+      foods: recent.flatMap((item) => {
+        const food = byId.get(item.foodId);
+        return food ? [{ ...presentFood(food, user.id), lastAmount: item.lastAmount }] : [];
+      }),
+    });
+  }),
+);
 
 foodsRouter.get(
   "/:id",
@@ -53,10 +106,10 @@ foodsRouter.post(
   asyncRoute(async (req, res) => {
     const user = currentUser(res);
     const body = foodSchema.parse(req.body);
-    const existing = await prisma.food.findUnique({
-      where: { ownerId_barcode: { ownerId: user.id, barcode: body.barcode } },
-    });
-    if (existing) throw new HttpError(409, "already_exists");
+    if (body.barcode) {
+      const existing = await prisma.food.findFirst({ where: { ownerId: user.id, barcode: body.barcode } });
+      if (existing) throw new HttpError(409, "already_exists");
+    }
     const food = await prisma.food.create({
       data: {
         ...body,
@@ -85,16 +138,17 @@ foodsRouter.put(
       return;
     }
     if (!food.published) throw new HttpError(403, "forbidden");
-    const copy = await prisma.food.upsert({
-      where: { ownerId_barcode: { ownerId: user.id, barcode: food.barcode } },
-      create: {
-        barcode: food.barcode,
-        ownerId: user.id,
-        published: false,
-        ...body,
-      },
-      update: { ...body, verifiedAt: null, verifiedById: null },
-    });
+    // Editing someone else's published food makes a personal copy.
+    // With a barcode there is at most one copy per owner; without one, always a new copy.
+    const copy = food.barcode
+      ? await prisma.food.upsert({
+          where: { ownerId_barcode: { ownerId: user.id, barcode: food.barcode } },
+          create: { barcode: food.barcode, ownerId: user.id, published: false, ...body },
+          update: { ...body, verifiedAt: null, verifiedById: null },
+        })
+      : await prisma.food.create({
+          data: { barcode: null, ownerId: user.id, published: false, ...body },
+        });
     res.json({ food: presentFood(copy, user.id) });
   }),
 );
@@ -133,10 +187,13 @@ foodsRouter.post(
     const food = await prisma.food.findUnique({ where: { id: req.params.id } });
     if (!food || !food.published) throw new HttpError(404, "not_found");
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.food.updateMany({
-        where: { barcode: food.barcode, verifiedAt: { not: null } },
-        data: { verifiedAt: null, verifiedById: null },
-      });
+      // Only one verified food per barcode. Foods without a barcode are verified independently.
+      if (food.barcode) {
+        await tx.food.updateMany({
+          where: { barcode: food.barcode, verifiedAt: { not: null } },
+          data: { verifiedAt: null, verifiedById: null },
+        });
+      }
       return tx.food.update({
         where: { id: food.id },
         data: { verifiedAt: new Date(), verifiedById: user.id },

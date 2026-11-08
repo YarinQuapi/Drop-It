@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
-import { daySucceeded, summarizeWeekDays, sumNutrients, weightChangeKg } from "../domain.js";
+import { daySucceeded, dayStatus, summarizeWeekDays, sumNutrients, weightChangeKg } from "../domain.js";
 import { loadHealthSettings, resolveGoal } from "../goals.js";
 import { asyncRoute, HttpError } from "../http.js";
 import { num } from "../present.js";
@@ -53,18 +53,16 @@ weeksRouter.get(
           sodium: num(entry.sodium),
         })),
       );
-      const success = daySucceeded({
-        entryCount: dayEntries.length,
-        calories: totals.calories,
-        goalKcal,
-        future,
-      });
+      const statusInput = { entryCount: dayEntries.length, calories: totals.calories, goalKcal, future, today: day === today };
+      const success = daySucceeded(statusInput);
+      const status = dayStatus(statusInput);
       dayRows.push({
         day,
         goalKcal,
         calories: totals.calories,
         entryCount: dayEntries.length,
         success,
+        status,
         future,
         steps: healthDay ? healthDay.steps : null,
         exerciseMinutes: healthDay ? healthDay.exerciseMinutes : null,

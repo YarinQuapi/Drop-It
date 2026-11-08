@@ -12,10 +12,10 @@ Full rules: [.cursor/rules/apple-hig-design.mdc](.cursor/rules/apple-hig-design.
 
 Quick rules:
 1. No hardcoded colors; use semantic tokens (`var(--accent-primary)`, `context.apple.accentPrimary`).
-2. Radii: 10 (segmented/tiles), 12 (buttons/inputs), 16 (cards), 20 (sheets/drawers/hero), pill for chips.
+2. Radii: 10 (segmented/tiles), 12 (buttons/inputs), 16 (cards), 20 (sheets/hero), pill for chips.
 3. 8pt spacing grid: 8/12/16 gaps, 16px page and card padding, 44px minimum touch target, 0.5px separators.
 4. System blue accent (#007AFF / #0A84FF); orange for calorie/fasting energy; green success; red danger.
-5. Translucent blurred bars/drawers, iOS-style switches, segmented controls.
+5. Translucent blurred top and tab bars (no hamburger drawer), iOS-style switches, segmented controls.
 6. Every user-facing string exists in English and Hebrew; support RTL.
 
 When changing the design system, update both platforms and `.cursor/rules/apple-hig-design.mdc` together.

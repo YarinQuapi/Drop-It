@@ -34,11 +34,19 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-  const response = await fetch(path, { ...init, headers, credentials: "include" });
+  let response: Response;
+  try {
+    response = await fetch(path, { signal: AbortSignal.timeout(20000), ...init, headers, credentials: "include" });
+  } catch (err) {
+    // Offline / DNS / refused -> TypeError; slow server -> TimeoutError.
+    throw new ApiError(err instanceof DOMException && err.name === "TimeoutError" ? "timeout" : "network_error", 0);
+  }
   const data = (await response.json().catch(() => ({}))) as { error?: string; token?: string };
   if (!response.ok) {
     if (response.status === 401) setStoredToken(null);
-    throw new ApiError(data.error ?? "server_error", response.status);
+    // A gateway error without our JSON body means the API itself is unreachable.
+    const unreachable = !data.error && [502, 503, 504].includes(response.status);
+    throw new ApiError(data.error ?? (unreachable ? "network_error" : "server_error"), response.status);
   }
   if (typeof data.token === "string" && data.token.length > 0) {
     setStoredToken(data.token);
@@ -58,7 +66,7 @@ export type Nutrients = {
 
 export type Food = Nutrients & {
   id: string;
-  barcode: string;
+  barcode: string | null;
   name: string;
   basis: "solid" | "liquid";
   published: boolean;
@@ -147,7 +155,7 @@ export type DayEntry = Nutrients & {
 
 export type DayResponse = {
   day: string;
-  /** Effective food budget: the base plus Apple active kcal when healthAdjusted. */
+  /** Food budget for the day. Active calories do not increase it. */
   goalKcal: number;
   baseGoalKcal: number;
   activeKcal: number;
@@ -160,8 +168,12 @@ export type DayResponse = {
   entries: DayEntry[];
   totals: Nutrients;
   success: boolean;
+  status: DayStatus;
   future: boolean;
 };
+
+/** "met" only once the day is over; today is "on_track" while under the goal. */
+export type DayStatus = "future" | "empty" | "on_track" | "over" | "met";
 
 export type WeekResponse = {
   sunday: string;
@@ -178,6 +190,7 @@ export type WeekResponse = {
     goalKcal: number;
     calories: number;
     success: boolean;
+    status: DayStatus;
     future: boolean;
     steps?: number | null;
     exerciseMinutes?: number | null;

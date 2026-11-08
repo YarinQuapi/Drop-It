@@ -119,7 +119,7 @@ model DailyGoal {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   day      DateTime @db.Date
   goalKcal Int
-  // True when goalKcal is the sedentary base and that day's Apple active kcal is added on read.
+  // True when goalKcal is the sedentary base because Apple Health is connected. Active calories do not change it.
   healthAdjusted Boolean @default(false)
   createdAt DateTime @default(now())
 
@@ -128,7 +128,8 @@ model DailyGoal {
 
 model Food {
   id            String    @id @default(cuid())
-  barcode       String
+  // Null for loose foods (fruit, home cooking). Unique per owner when set.
+  barcode       String?
   name          String
   ownerId       String
   owner         User      @relation("FoodOwner", fields: [ownerId], references: [id], onDelete: Cascade)

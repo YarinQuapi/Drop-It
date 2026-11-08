@@ -5,6 +5,7 @@
 import 'package:flutter/cupertino.dart'
     show
         CupertinoDatePicker,
+        CupertinoSlidingSegmentedControl,
         CupertinoDatePickerMode,
         CupertinoPageTransitionsBuilder,
         CupertinoTextThemeData,
@@ -73,7 +74,8 @@ class AppleColors extends ThemeExtension<AppleColors> {
     cardBg: Color(0xFFFFFFFF),
     tertiaryFill: Color(0xFFEFEFF4),
     glass: Color(0xC7FFFFFF),
-    labelSecondary: Color(0x993C3C43),
+    // 0.76 alpha (iOS uses 0.6) so 13pt secondary text passes WCAG AA.
+    labelSecondary: Color(0xC23C3C43),
     separator: Color(0x2E3C3C43),
     accentPrimary: Color(0xFF007AFF),
     accentTint: Color(0x1F007AFF),
@@ -258,6 +260,8 @@ ThemeData buildAppleTheme(Brightness brightness) {
         vertical: Gaps.md,
       ),
       labelStyle: TextStyle(color: c.labelSecondary),
+      helperStyle: TextStyle(color: c.labelSecondary, fontSize: 13),
+      hintStyle: TextStyle(color: c.labelSecondary),
       floatingLabelStyle: TextStyle(color: c.accentPrimary),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(Radii.control),
@@ -882,6 +886,66 @@ class RuleRow extends StatelessWidget {
           fontSize: 13,
         ),
       ),
+    );
+  }
+}
+
+/// iOS segmented control in the app's tokens. [value] may be null so a
+/// choice can start unselected (no silent default).
+class AppleSegmented<T extends Object> extends StatelessWidget {
+  const AppleSegmented({
+    super.key,
+    this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.large = false,
+  });
+
+  final String? label;
+  final T? value;
+  final List<AppleMenuOption<T>> options;
+  final ValueChanged<T> onChanged;
+
+  /// Full 44pt touch height (for primary choices such as onboarding).
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    final apple = context.apple;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (label != null) ...[
+          Text(
+            label!,
+            style: TextStyle(
+              color: apple.labelSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 6),
+        ],
+        CupertinoSlidingSegmentedControl<T>(
+          groupValue: value,
+          backgroundColor: apple.tertiaryFill,
+          thumbColor: apple.cardBg,
+          children: {
+            for (final option in options)
+              option.value: Padding(
+                padding: EdgeInsets.symmetric(vertical: large ? 11 : 6),
+                child: Text(
+                  option.label,
+                  style: TextStyle(fontSize: large ? 16 : 13),
+                ),
+              ),
+          },
+          onValueChanged: (next) {
+            if (next != null) onChanged(next);
+          },
+        ),
+      ],
     );
   }
 }
