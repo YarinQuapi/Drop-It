@@ -103,6 +103,10 @@ profileRouter.put(
         customGoalKcal,
       },
     });
+    // The first weight a user gives (usually during onboarding) starts their weight graph.
+    if (weights.length === 0) {
+      await prisma.weightEntry.create({ data: { userId: user.id, weightKg: body.weightKg, loggedAt: new Date() } });
+    }
     await ensureGoal(user.id, today, true);
     const goal = await resolveGoal(user.id, today, { future: false });
     res.json({

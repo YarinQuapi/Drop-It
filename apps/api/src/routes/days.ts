@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
-import { daySucceeded, scaleNutrients, sumNutrients, type Nutrients } from "../domain.js";
+import { daySucceeded, dayStatus, scaleNutrients, sumNutrients, type Nutrients } from "../domain.js";
 import { closeRunningFast } from "../fasting-log.js";
 import { resolveGoal } from "../goals.js";
 import { asyncRoute, HttpError } from "../http.js";
@@ -34,12 +34,10 @@ daysRouter.get(
       ...goal,
       entries: entries.map(presentEntry),
       totals: nutrients,
-      success: daySucceeded({
-        entryCount: entries.length,
-        calories: nutrients.calories,
-        goalKcal,
-        future,
-      }),
+      ...(() => {
+        const input = { entryCount: entries.length, calories: nutrients.calories, goalKcal, future, today: day === today };
+        return { success: daySucceeded(input), status: dayStatus(input) };
+      })(),
       future,
     });
   }),

@@ -87,7 +87,13 @@ export const settingsSchema = z.object({
 });
 
 export const foodSchema = z.object({
-  barcode: z.string().trim().min(1).max(64),
+  // Optional: loose foods have no barcode. Blank counts as none.
+  barcode: z
+    .string()
+    .trim()
+    .max(64)
+    .nullish()
+    .transform((value) => (value ? value : null)),
   name: z.string().trim().min(1).max(120),
   basis: basisSchema,
 }).merge(nutrientsSchema);

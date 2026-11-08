@@ -6,6 +6,7 @@ import {
   calorieSafetyFloor,
   checkPassword,
   daySucceeded,
+  dayStatus,
   effectiveGoalKcal,
   fastDurationMinutes,
   fastEndsAt,
@@ -207,6 +208,16 @@ test("a day succeeds only when food was logged and calories are at or under the 
   assert.equal(daySucceeded({ entryCount: 1, calories: 1800, goalKcal: 1800, future: false }), true);
   assert.equal(daySucceeded({ entryCount: 1, calories: 1801, goalKcal: 1800, future: false }), false);
   assert.equal(daySucceeded({ entryCount: 1, calories: 100, goalKcal: 1800, future: true }), false);
+});
+
+test("today is on track, not met, until the day is over", () => {
+  const base = { entryCount: 1, goalKcal: 1800, future: false };
+  assert.equal(dayStatus({ ...base, calories: 165, today: true }), "on_track");
+  assert.equal(daySucceeded({ ...base, calories: 165, today: true }), false);
+  assert.equal(dayStatus({ ...base, calories: 1900, today: true }), "over");
+  assert.equal(dayStatus({ ...base, calories: 165 }), "met");
+  assert.equal(dayStatus({ ...base, entryCount: 0, calories: 0 }), "empty");
+  assert.equal(dayStatus({ ...base, calories: 0, future: true }), "future");
 });
 
 test("weekly summary counts unlogged days toward overall goalKcal but excludes them from listed days", () => {
@@ -457,28 +468,29 @@ test("Apple Health replaces the activity multiplier from the connection day thro
   assert.equal(usesHealthBase({ ...connected, connectedOn: null, day: "2026-10-30" }), false);
 });
 
-test("health-adjusted goal is the sedentary base plus active kcal, never the activity level twice", () => {
+test("health-adjusted goal stays the sedentary base and does not add active kcal", () => {
   const person = { sex: "male", weightKg: 80, heightCm: 180, age: 30, pace: "kg050" } as const;
   const sedentary = calorieGoal({ ...person, activity: "sedentary" });
   const moderate = calorieGoal({ ...person, activity: "moderate" });
   assert.equal(sedentary, 1780);
-  assert.equal(effectiveGoalKcal(sedentary, 420, true), 2200);
-  assert.ok(effectiveGoalKcal(sedentary, 420, true) < moderate + 420);
-  assert.equal(effectiveGoalKcal(sedentary, 420, false), 1780);
-  assert.equal(effectiveGoalKcal(sedentary, -50, true), 1780);
-  assert.equal(effectiveGoalKcal(sedentary, 99.6, true), 1880);
+  assert.ok(sedentary < moderate);
+  assert.equal(effectiveGoalKcal(sedentary, 420, true), sedentary);
+  assert.equal(effectiveGoalKcal(sedentary, 420, false), sedentary);
+  assert.equal(effectiveGoalKcal(sedentary, -50, true), sedentary);
+  assert.equal(effectiveGoalKcal(sedentary, 99.6, true), sedentary);
 });
 
-test("the safety floor applies to the sedentary base before active kcal is added", () => {
+test("the safety floor is the food budget; active kcal does not raise it", () => {
   const base = calorieGoal({ sex: "female", weightKg: 40, heightCm: 150, age: 60, activity: "sedentary", pace: "kg100" });
   assert.equal(base, 1200);
-  assert.equal(effectiveGoalKcal(base, 300, true), 1500);
+  assert.equal(effectiveGoalKcal(base, 300, true), 1200);
 });
 
-test("a health-adjusted day succeeds against the effective goal", () => {
+test("a day succeeds against the base goal, not the base plus active kcal", () => {
   const goalKcal = effectiveGoalKcal(1600, 400, true);
-  assert.equal(daySucceeded({ entryCount: 2, calories: 1950, goalKcal, future: false }), true);
-  assert.equal(daySucceeded({ entryCount: 2, calories: 2001, goalKcal, future: false }), false);
+  assert.equal(goalKcal, 1600);
+  assert.equal(daySucceeded({ entryCount: 2, calories: 1600, goalKcal, future: false }), true);
+  assert.equal(daySucceeded({ entryCount: 2, calories: 1601, goalKcal, future: false }), false);
   assert.equal(daySucceeded({ entryCount: 0, calories: 0, goalKcal, future: false }), false);
 });
 

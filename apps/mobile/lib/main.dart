@@ -70,6 +70,12 @@ class _DropItAppState extends State<DropItApp> with WidgetsBindingObserver {
 
   Future<void> boot() async {
     themeMode = await api.loadThemeMode();
+    // Signed-out default: the device language (the account's wins after login).
+    lang =
+        await api.loadLanguage() ??
+        (WidgetsBinding.instance.platformDispatcher.locale.languageCode == 'he'
+            ? 'he'
+            : 'en');
     try {
       await reminders.init();
     } catch (_) {}
@@ -157,6 +163,10 @@ class _DropItAppState extends State<DropItApp> with WidgetsBindingObserver {
                   api: api,
                   t: copy,
                   onAuth: afterAuth,
+                  onLang: (next) {
+                    setState(() => lang = next);
+                    unawaited(api.saveLanguage(next));
+                  },
                 )
               : me!['hasProfile'] != true
               ? SetupScreen(
@@ -206,10 +216,12 @@ class AuthScreen extends StatefulWidget {
     required this.api,
     required this.t,
     required this.onAuth,
+    required this.onLang,
   });
   final Api api;
   final Copy t;
   final Future<void> Function(Map<String, dynamic>) onAuth;
+  final ValueChanged<String> onLang;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -225,9 +237,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _continueWithApple() async {
     final t = widget.t;
-    final language = Localizations.localeOf(context).languageCode == 'he'
-        ? 'he'
-        : 'en';
+    final language = t.lang;
     setState(() {
       error = '';
       appleBusy = true;
@@ -302,6 +312,25 @@ class _AuthScreenState extends State<AuthScreen> {
         child: AppList(
           gap: Gaps.md,
           children: [
+            Padding(
+              padding: const EdgeInsets.only(top: Gaps.xl, bottom: Gaps.sm),
+              child: Column(
+                spacing: 2,
+                children: [
+                  const AppMark(),
+                  const SizedBox(height: Gaps.sm),
+                  Text(
+                    t.appName,
+                    style: Theme.of(context).textTheme.headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    t.tagline,
+                    style: TextStyle(color: context.apple.labelSecondary),
+                  ),
+                ],
+              ),
+            ),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 220),
               child: Text(
@@ -354,11 +383,15 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
             TextField(
               controller: email,
+              // Emails and passwords are Latin text: keep them LTR in Hebrew too.
+              textDirection: TextDirection.ltr,
               decoration: InputDecoration(labelText: t.email),
               keyboardType: TextInputType.emailAddress,
             ),
             TextField(
               controller: password,
+              // Emails and passwords are Latin text: keep them LTR in Hebrew too.
+              textDirection: TextDirection.ltr,
               decoration: InputDecoration(labelText: t.password),
               obscureText: true,
               onChanged: (_) {
@@ -368,6 +401,8 @@ class _AuthScreenState extends State<AuthScreen> {
             if (signup) ...[
               TextField(
                 controller: confirmPassword,
+                // Emails and passwords are Latin text: keep them LTR in Hebrew too.
+                textDirection: TextDirection.ltr,
                 decoration: InputDecoration(labelText: t.confirmPassword),
                 obscureText: true,
                 onChanged: (_) => setState(() {}),
@@ -435,8 +470,65 @@ class _AuthScreenState extends State<AuthScreen> {
               }),
               child: Text(signup ? t.login : t.signup),
             ),
+            Center(
+              child: SizedBox(
+                width: 240,
+                child: AppleSegmented<String>(
+                  value: t.lang,
+                  options: const [
+                    AppleMenuOption('en', 'English'),
+                    AppleMenuOption('he', 'עברית'),
+                  ],
+                  onChanged: widget.onLang,
+                ),
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Chevron that points to the trailing (or, with [back], leading) side, so it
+/// mirrors in RTL. CupertinoIcons chevrons do not flip on their own.
+class DirectionalChevron extends StatelessWidget {
+  const DirectionalChevron({super.key, this.back = false, this.color, this.size});
+  final bool back;
+  final Color? color;
+  final double? size;
+
+  @override
+  Widget build(BuildContext context) {
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final pointsLeft = back != rtl;
+    return Icon(
+      pointsLeft ? CupertinoIcons.chevron_left : CupertinoIcons.chevron_right,
+      color: color,
+      size: size,
+    );
+  }
+}
+
+/// App mark: a drop on the accent tile.
+class AppMark extends StatelessWidget {
+  const AppMark({super.key, this.size = 56});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final apple = context.apple;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: apple.accentPrimary,
+        borderRadius: BorderRadius.circular(size * 0.25),
+      ),
+      child: Icon(
+        CupertinoIcons.drop_fill,
+        color: Theme.of(context).colorScheme.onPrimary,
+        size: size * 0.55,
       ),
     );
   }
@@ -463,7 +555,8 @@ class _SetupScreenState extends State<SetupScreen> {
   bool? wants;
   int length = 16;
   int startHour = 20;
-  String sex = 'female';
+  // No silent default: the user picks explicitly.
+  String? sex;
   DateTime? birthDate;
   final height = TextEditingController();
   final weight = TextEditingController();
@@ -477,9 +570,14 @@ class _SetupScreenState extends State<SetupScreen> {
   int? get _suggested {
     final heightCm = parseDecimal(height.text);
     final weightKg = parseDecimal(weight.text);
-    if (birthDate == null || heightCm == null || weightKg == null) return null;
+    if (sex == null ||
+        birthDate == null ||
+        heightCm == null ||
+        weightKg == null) {
+      return null;
+    }
     return suggestedCalorieGoal(
-      sex: sex,
+      sex: sex!,
       weightKg: weightKg,
       heightCm: heightCm,
       age: ageFromDob(birthDate!),
@@ -502,6 +600,15 @@ class _SetupScreenState extends State<SetupScreen> {
     super.dispose();
   }
 
+  Widget _stepLabel(int step) => Text(
+    widget.t.stepOf(step),
+    style: TextStyle(
+      color: context.apple.labelSecondary,
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
@@ -513,36 +620,23 @@ class _SetupScreenState extends State<SetupScreen> {
             gap: Gaps.md,
             children: [
               if (!profileStep) ...[
+                _stepLabel(1),
                 Text(
                   t.fastingQuestion,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: wants == true
-                          ? FilledButton(
-                              onPressed: () => setState(() => wants = true),
-                              child: Text(t.yes),
-                            )
-                          : OutlinedButton(
-                              onPressed: () => setState(() => wants = true),
-                              child: Text(t.yes),
-                            ),
-                    ),
-                    const SizedBox(width: Gaps.sm),
-                    Expanded(
-                      child: wants == false
-                          ? FilledButton(
-                              onPressed: () => setState(() => wants = false),
-                              child: Text(t.no),
-                            )
-                          : OutlinedButton(
-                              onPressed: () => setState(() => wants = false),
-                              child: Text(t.no),
-                            ),
-                    ),
+                Text(
+                  t.fastingQuestionHint,
+                  style: TextStyle(color: context.apple.labelSecondary),
+                ),
+                AppleSegmented<bool>(
+                  large: true,
+                  value: wants,
+                  options: [
+                    AppleMenuOption(true, t.yes),
+                    AppleMenuOption(false, t.no),
                   ],
+                  onChanged: (value) => setState(() => wants = value),
                 ),
                 AnimatedCrossFade(
                   duration: const Duration(milliseconds: 280),
@@ -553,6 +647,8 @@ class _SetupScreenState extends State<SetupScreen> {
                   firstChild: const SizedBox(width: double.infinity),
                   secondChild: Column(
                     children: [
+                      // Room for the floating label: the cross-fade clips its child.
+                      const SizedBox(height: Gaps.md),
                       AppleMenuField<int>(
                         label: t.fastingLength,
                         value: length,
@@ -601,11 +697,12 @@ class _SetupScreenState extends State<SetupScreen> {
                   child: Text(t.continueLabel),
                 ),
               ] else ...[
+                _stepLabel(2),
                 Text(
                   t.profileTitle,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
-                AppleMenuField<String>(
+                AppleSegmented<String>(
                   label: t.sex,
                   value: sex,
                   options: [
@@ -666,9 +763,11 @@ class _SetupScreenState extends State<SetupScreen> {
                 decimalField(
                   dailyGoal,
                   t.dailyGoal,
+                  helper: dailyGoal.text.isEmpty ? t.goalAutoHint : null,
                   onChanged: (_) => setState(() => touchedGoal = true),
                 ),
-                if (_suggested != null)
+                // Only offered once the goal differs from the suggestion.
+                if (_suggested != null && touchedGoal)
                   OutlinedButton(
                     onPressed: () => setState(() {
                       touchedGoal = false;
@@ -686,7 +785,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
                 if (error.isNotEmpty) ErrorText(error),
                 FilledButton(
-                  onPressed: birthDate == null
+                  onPressed: birthDate == null || sex == null
                       ? null
                       : () async {
                           final heightCm = parseDecimal(height.text);
@@ -762,104 +861,89 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int index = 0;
 
-  void openPage(int value) {
-    setState(() => index = value);
-    Navigator.of(context).maybePop();
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
+    final apple = context.apple;
     final isAdmin = widget.me['user']['isAdmin'] == true;
     final perms = ((widget.me['permissions'] as List?) ?? []).cast<String>();
     final canVerifyFoods = isAdmin || perms.contains('foods:verify');
-    final pages = [
-      TodayScreen(
-        api: widget.api,
-        t: t,
-        admin: canVerifyFoods,
-        sync: widget.sync,
+    // Top-level destinations live in a tab bar (HIG); log out and admin tools
+    // are inside Settings.
+    final tabs = <(String, IconData, IconData, Widget)>[
+      (
+        t.today,
+        CupertinoIcons.sun_max,
+        CupertinoIcons.sun_max_fill,
+        TodayScreen(
+          api: widget.api,
+          t: t,
+          admin: canVerifyFoods,
+          sync: widget.sync,
+        ),
       ),
-      WeekScreen(api: widget.api, t: t),
-      WeightScreen(api: widget.api, t: t),
-      FastingScreen(api: widget.api, t: t, sync: widget.sync),
-      SettingsScreen(
-        api: widget.api,
-        t: t,
-        me: widget.me,
-        themeMode: widget.themeMode,
-        onThemeMode: widget.onThemeMode,
-        onMe: widget.onMe,
-        health: widget.health,
-        sync: widget.sync,
+      (
+        t.week,
+        CupertinoIcons.chart_bar,
+        CupertinoIcons.chart_bar_fill,
+        WeekScreen(api: widget.api, t: t),
       ),
-      if (isAdmin) PermissionsScreen(api: widget.api, t: t),
+      (
+        t.fastingTab,
+        CupertinoIcons.timer,
+        CupertinoIcons.timer_fill,
+        FastingScreen(api: widget.api, t: t, sync: widget.sync),
+      ),
+      (
+        t.weight,
+        CupertinoIcons.gauge,
+        CupertinoIcons.gauge,
+        WeightScreen(api: widget.api, t: t),
+      ),
+      (
+        t.settings,
+        CupertinoIcons.gear,
+        CupertinoIcons.gear_solid,
+        SettingsScreen(
+          api: widget.api,
+          t: t,
+          me: widget.me,
+          themeMode: widget.themeMode,
+          onThemeMode: widget.onThemeMode,
+          onMe: widget.onMe,
+          health: widget.health,
+          sync: widget.sync,
+          onLogout: widget.onLogout,
+          isAdmin: isAdmin,
+        ),
+      ),
     ];
-    final items = [
-      t.today,
-      t.week,
-      t.weight,
-      t.fasting,
-      t.settings,
-      if (isAdmin) t.permissions,
-    ];
-    final safeIndex = index < pages.length ? index : 0;
+    final safeIndex = index < tabs.length ? index : 0;
     return Scaffold(
-      drawer: Drawer(
-        child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.all(Gaps.sm),
-            children: [
-              for (var i = 0; i < items.length; i++)
-                ListTile(
-                  minTileHeight: Gaps.hit,
-                  selected: i == safeIndex,
-                  selectedColor: context.apple.accentPrimary,
-                  selectedTileColor: context.apple.accentTint,
-                  title: Text(
-                    items[i],
-                    style: TextStyle(
-                      fontWeight: i == safeIndex
-                          ? FontWeight.w600
-                          : FontWeight.w500,
-                    ),
-                  ),
-                  onTap: () => openPage(i),
-                ),
-              ListTile(
-                minTileHeight: Gaps.hit,
-                title: Text(
-                  t.logout,
-                  style: TextStyle(
-                    color: context.apple.accentDangerText,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                onTap: widget.onLogout,
-              ),
-            ],
-          ),
-        ),
-      ),
-      appBar: AppBar(
-        leading: Builder(
-          builder: (context) => IconButton(
-            tooltip: t.menu,
-            onPressed: () {
-              final scaffold = Scaffold.of(context);
-              if (scaffold.isDrawerOpen) {
-                Navigator.of(context).pop();
-              } else {
-                scaffold.openDrawer();
-              }
-            },
-            icon: const Icon(Icons.menu),
-          ),
-        ),
-        title: Text(t.appName),
-      ),
+      appBar: AppBar(title: Text(tabs[safeIndex].$1)),
       body: SoftSwitcher(
-        child: KeyedSubtree(key: ValueKey(safeIndex), child: pages[safeIndex]),
+        child: KeyedSubtree(
+          key: ValueKey(safeIndex),
+          child: tabs[safeIndex].$4,
+        ),
+      ),
+      bottomNavigationBar: CupertinoTabBar(
+        currentIndex: safeIndex,
+        onTap: (value) => setState(() => index = value),
+        activeColor: apple.accentPrimary,
+        inactiveColor: apple.labelSecondary,
+        backgroundColor: apple.glass,
+        border: Border(
+          top: BorderSide(color: apple.separator, width: 0.5),
+        ),
+        items: [
+          for (final tab in tabs)
+            BottomNavigationBarItem(
+              icon: Icon(tab.$2),
+              activeIcon: Icon(tab.$3),
+              label: tab.$1,
+            ),
+        ],
       ),
     );
   }
@@ -886,8 +970,51 @@ const _meals = ['breakfast', 'lunch', 'dinner', 'snacks'];
 
 class _TodayScreenState extends State<TodayScreen> {
   Map<String, dynamic>? day;
+  Map<String, dynamic>? fasting;
   String error = '';
-  String? loggingMeal;
+  Timer? ticker;
+
+  /// Entries removed but still inside their Undo window (hidden locally).
+  final Set<String> hiddenEntries = {};
+
+  void _removeEntry(Map entry) {
+    final id = entry['id'] as String;
+    final t = widget.t;
+    setState(() => hiddenEntries.add(id));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger
+        .showSnackBar(
+          SnackBar(
+            content: Text(
+              t.removedEntry(entry['name'] as String),
+              overflow: TextOverflow.ellipsis,
+            ),
+            duration: const Duration(seconds: 6),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(Radii.control),
+            ),
+            action: SnackBarAction(
+              label: t.undo,
+              onPressed: () {
+                if (mounted) setState(() => hiddenEntries.remove(id));
+              },
+            ),
+          ),
+        )
+        .closed
+        .then((reason) async {
+          if (reason == SnackBarClosedReason.action) return;
+          try {
+            await widget.api.send('DELETE', '/api/days/today/entries/$id');
+          } on ApiException catch (err) {
+            if (mounted) setState(() => error = t.error(err.code));
+          }
+          hiddenEntries.remove(id);
+          if (mounted) await load();
+        });
+  }
 
   @override
   void initState() {
@@ -898,6 +1025,7 @@ class _TodayScreenState extends State<TodayScreen> {
 
   @override
   void dispose() {
+    ticker?.cancel();
     AppleHealth.synced.removeListener(_onHealthSynced);
     super.dispose();
   }
@@ -907,16 +1035,37 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> load() async {
+    Map<String, dynamic>? nextDay = day;
+    Map<String, dynamic>? nextFast = fasting;
+    var nextError = '';
     try {
-      final nextDay = await widget.api.send('GET', '/api/days/today');
-      if (!mounted) return;
-      setState(() {
-        day = nextDay;
-        error = '';
-      });
+      nextDay = await widget.api.send('GET', '/api/days/today');
     } on ApiException catch (err) {
-      if (!mounted) return;
-      setState(() => error = widget.t.error(err.code));
+      nextError = widget.t.error(err.code);
+    }
+    try {
+      nextFast = await widget.api.send('GET', '/api/fasting');
+    } on ApiException catch (err) {
+      if (nextError.isEmpty) nextError = widget.t.error(err.code);
+    }
+    if (!mounted) return;
+    setState(() {
+      day = nextDay;
+      fasting = nextFast;
+      error = nextError;
+    });
+    _ensureTicker();
+  }
+
+  void _ensureTicker() {
+    final running = fasting?['running'] == true;
+    if (running) {
+      ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    } else {
+      ticker?.cancel();
+      ticker = null;
     }
   }
 
@@ -924,12 +1073,32 @@ class _TodayScreenState extends State<TodayScreen> {
   Widget build(BuildContext context) {
     final t = widget.t;
     final totals = (day?['totals'] as Map?)?.cast<String, dynamic>();
-    final entries = ((day?['entries'] as List?) ?? []).cast<Map>();
+    final allEntries = ((day?['entries'] as List?) ?? []).cast<Map>();
+    final entries = allEntries
+        .where((entry) => !hiddenEntries.contains(entry['id']))
+        .toList();
+    final hiddenKcal = allEntries
+        .where((entry) => hiddenEntries.contains(entry['id']))
+        .fold<num>(0, (sum, entry) => sum + ((entry['calories'] as num?) ?? 0));
     final goal = (day?['goalKcal'] as num?) ?? 0;
-    final eaten = (totals?['calories'] as num?) ?? 0;
+    final eaten = ((totals?['calories'] as num?) ?? 0) - hiddenKcal;
     final remaining = goal - eaten;
     final over = eaten > goal;
     final apple = context.apple;
+    final mealKcal = <String, num>{
+      for (final meal in _meals)
+        meal: entries
+            .where((entry) => (entry['meal'] as String? ?? 'snacks') == meal)
+            .fold<num>(0, (sum, entry) => sum + ((entry['calories'] as num?) ?? 0)),
+    };
+    final eatenBasis = over && eaten > 0 ? eaten : goal;
+    final ringSlices = [
+      for (final meal in _meals)
+        _RingSlice(
+          _mealColor(apple, meal),
+          eatenBasis <= 0 ? 0 : (mealKcal[meal]! / eatenBasis).toDouble(),
+        ),
+    ];
     return AppList(
       children: [
         if (day != null)
@@ -942,45 +1111,77 @@ class _TodayScreenState extends State<TodayScreen> {
             ),
             child: Padding(
               padding: const EdgeInsets.all(20),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(
-                    width: 132,
-                    height: 132,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        EaseBuilder(
-                          from: 0,
-                          value: goal == 0
-                              ? 0
-                              : (eaten / goal).clamp(0, 1).toDouble(),
-                          builder: (context, value) =>
-                              CircularProgressIndicator(
-                                value: value,
-                                strokeWidth: 10,
-                                strokeCap: StrokeCap.round,
-                                backgroundColor: apple.tertiaryFill,
-                                color: over
-                                    ? apple.accentDanger
-                                    : apple.accentEnergy,
-                              ),
-                        ),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 132,
+                        height: 132,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          clipBehavior: Clip.none,
                           children: [
-                            EaseBuilder(
-                              from: goal.toDouble(),
-                              value: remaining.toDouble(),
-                              builder: (context, value) => Text(
-                                '${value.round()}',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium,
+                            Transform.translate(
+                              offset: const Offset(0, -10),
+                              child: SizedBox(
+                                width: 132,
+                                height: 132,
+                                child: EaseBuilder(
+                                  from: 0,
+                                  value: 1,
+                                  builder: (context, progress) => CustomPaint(
+                                    painter: _MealRingPainter(
+                                      slices: ringSlices,
+                                      track: apple.tertiaryFill,
+                                      progress: progress,
+                                    ),
+                                    child: const SizedBox.expand(),
+                                  ),
+                                ),
                               ),
                             ),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                EaseBuilder(
+                                  from: goal.toDouble(),
+                                  value: remaining.toDouble(),
+                                  builder: (context, value) => Text(
+                                    _grouped(value),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineMedium
+                                        ?.copyWith(
+                                          color: over
+                                              ? apple.accentDangerText
+                                              : null,
+                                        ),
+                                  ),
+                                ),
+                                Text(
+                                  t.remaining,
+                                  style: TextStyle(
+                                    color: apple.labelSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${t.goal}  ${_grouped(goal)} ${t.kcal}'),
+                            Text('${t.eaten}  ${_grouped(eaten)} ${t.kcal}'),
+                            const SizedBox(height: Gaps.xs),
                             Text(
-                              t.remaining,
+                              t.dayStatus(day!['status'] as String?),
                               style: TextStyle(
                                 color: apple.labelSecondary,
                                 fontSize: 13,
@@ -988,81 +1189,93 @@ class _TodayScreenState extends State<TodayScreen> {
                             ),
                           ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 20),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  if (day!['healthSynced'] == true) ...[
+                    const SizedBox(height: Gaps.lg),
+                    HealthProgressRow(
+                      label: t.healthSteps,
+                      value: (day!['steps'] as num?) ?? 0,
+                      goal: (day!['stepGoal'] as num?) ?? 0,
+                    ),
+                    const SizedBox(height: Gaps.md),
+                    HealthProgressRow(
+                      label: t.healthExercise,
+                      value: (day!['exerciseMinutes'] as num?) ?? 0,
+                      goal: (day!['exerciseGoalMinutes'] as num?) ?? 0,
+                      unit: t.healthMinutes,
+                    ),
+                  ],
+                  if (mealKcal.values.any((calories) => calories > 0)) ...[
+                    const SizedBox(height: Gaps.md),
+                    Wrap(
+                      spacing: Gaps.md,
+                      runSpacing: Gaps.sm,
                       children: [
-                        Text(
-                          t.today,
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: Gaps.xs),
-                        if (day!['healthAdjusted'] == true) ...[
-                          Text(
-                            '${t.healthBaseGoal}  ${day!['baseGoalKcal']} ${t.kcal}',
-                          ),
-                          Text(
-                            '${t.healthActiveKcal}  +${day!['activeKcal']} ${t.kcal}',
-                          ),
-                        ],
-                        Text('${t.goal}  $goal ${t.kcal}'),
-                        Text('${t.eaten}  $eaten ${t.kcal}'),
-                        const SizedBox(height: Gaps.xs),
-                        Text(
-                          over
-                              ? t.missed
-                              : day!['success'] == true
-                              ? t.success
-                              : day!['healthAdjusted'] == true
-                              ? t.healthEstimate
-                              : t.estimate,
-                          style: TextStyle(
-                            color: apple.labelSecondary,
-                            fontSize: 13,
-                          ),
-                        ),
+                        for (final meal in _meals)
+                          if ((mealKcal[meal] ?? 0) > 0)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: _mealColor(apple, meal),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  t.mealLabel(meal),
+                                  style: TextStyle(
+                                    color: apple.labelSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
                       ],
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
           ),
-        if (day != null && day!['healthSynced'] == true)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(Gaps.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    t.appleHealth,
-                    style: Theme.of(context).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
+        if (fasting != null)
+          _TodayFastCard(
+            t: t,
+            fasting: fasting!,
+            onToggle: () async {
+              try {
+                await widget.api.send(
+                  'POST',
+                  fasting!['running'] == true
+                      ? '/api/fasting/stop'
+                      : '/api/fasting/start',
+                );
+                await load();
+                await widget.sync();
+              } on ApiException catch (err) {
+                if (mounted) setState(() => error = t.error(err.code));
+              }
+            },
+            onDetails: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => FastingScreen(
+                    api: widget.api,
+                    t: t,
+                    sync: widget.sync,
                   ),
-                  const SizedBox(height: Gaps.md),
-                  HealthProgressRow(
-                    label: t.healthSteps,
-                    value: (day!['steps'] as num?) ?? 0,
-                    goal: (day!['stepGoal'] as num?) ?? 0,
-                  ),
-                  const SizedBox(height: Gaps.md),
-                  HealthProgressRow(
-                    label: t.healthExercise,
-                    value: (day!['exerciseMinutes'] as num?) ?? 0,
-                    goal: (day!['exerciseGoalMinutes'] as num?) ?? 0,
-                    unit: t.healthMinutes,
-                  ),
-                ],
-              ),
-            ),
+                ),
+              );
+              if (mounted) await load();
+            },
           ),
-        if (error.isNotEmpty && loggingMeal == null) ErrorText(error),
+        if (error.isNotEmpty) ErrorText(error),
         for (final meal in _meals) ...[
           _MealCard(
             t: t,
@@ -1072,36 +1285,61 @@ class _TodayScreenState extends State<TodayScreen> {
                   (entry) => (entry['meal'] as String? ?? 'snacks') == meal,
                 )
                 .toList(),
-            logging: loggingMeal == meal,
-            onToggleLog: () =>
-                setState(() => loggingMeal = loggingMeal == meal ? null : meal),
-            onScan: () async {
-              final code = await Navigator.push<String>(
-                context,
-                MaterialPageRoute(builder: (_) => const ScanScreen()),
-              );
-              if (code != null) await lookup(code, meal);
-            },
-            onLookup: () async {
-              final code = await askText(context, t.barcode);
-              if (code != null && code.isNotEmpty) await lookup(code, meal);
-            },
-            onDelete: (id) async {
-              await widget.api.send('DELETE', '/api/days/today/entries/$id');
-              await load();
-            },
+            onLog: () => _logMeal(meal),
+            onDelete: _removeEntry,
           ),
         ],
       ],
     );
   }
 
+  Future<void> _logMeal(String meal) async {
+    final t = widget.t;
+    final result = await Navigator.push<ScanOutcome>(
+      context,
+      MaterialPageRoute(builder: (_) => ScanScreen(manualLabel: t.searchInstead)),
+    );
+    if (!mounted || result == null) return;
+    if (result.manual) {
+      final found = await Navigator.push<FoodSearchOutcome>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FoodSearchScreen(api: widget.api, t: t),
+        ),
+      );
+      if (!mounted || found == null) return;
+      if (found.food != null) {
+        await addFood(found.food!, meal, initialAmount: found.lastAmount);
+      } else if (found.barcode != null) {
+        await lookup(found.barcode!, meal);
+      } else {
+        final created = await Navigator.push<Map<String, dynamic>>(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                FoodScreen(api: widget.api, t: t, initialName: found.newName),
+          ),
+        );
+        if (created != null && mounted) await addFood(created, meal);
+      }
+      return;
+    }
+    final code = result.code;
+    if (code != null && code.isNotEmpty) await lookup(code, meal);
+  }
+
   Future<void> lookup(String barcode, String meal) async {
     final t = widget.t;
-    final result = await widget.api.send(
-      'GET',
-      '/api/foods/barcode/${Uri.encodeComponent(barcode)}',
-    );
+    final Map<String, dynamic> result;
+    try {
+      result = await widget.api.send(
+        'GET',
+        '/api/foods/barcode/${Uri.encodeComponent(barcode)}',
+      );
+    } on ApiException catch (err) {
+      if (mounted) setState(() => error = t.error(err.code));
+      return;
+    }
     if (!mounted) return;
     Map<String, dynamic>? food = (result['food'] as Map?)
         ?.cast<String, dynamic>();
@@ -1131,24 +1369,38 @@ class _TodayScreenState extends State<TodayScreen> {
       );
     }
     if (food == null || !mounted) return;
-    food = await showModalBottomSheet<Map<String, dynamic>>(
+    await addFood(food, meal);
+  }
+
+  /// One sheet: the food, an amount with a live calorie total, and Add.
+  Future<void> addFood(
+    Map<String, dynamic> food,
+    String meal, {
+    num? initialAmount,
+  }) async {
+    final t = widget.t;
+    final picked = await showModalBottomSheet<FoodPick>(
       context: context,
-      builder: (context) =>
-          FoodActions(api: widget.api, t: t, food: food!, admin: widget.admin),
+      isScrollControlled: true,
+      builder: (context) => FoodActions(
+        api: widget.api,
+        t: t,
+        food: food,
+        admin: widget.admin,
+        initialAmount: initialAmount ?? 100,
+      ),
     );
-    if (food == null || !mounted) return;
-    final amount = await askText(
-      context,
-      '${t.amount} (${food['basis'] == 'solid' ? t.grams : t.milliliters})',
-    );
-    if (amount == null) return;
+    if (picked == null || !mounted) return;
     try {
       await widget.api.send(
         'POST',
         '/api/days/today/entries',
-        body: {'foodId': food['id'], 'amount': num.parse(amount), 'meal': meal},
+        body: {
+          'foodId': picked.food['id'],
+          'amount': picked.amount,
+          'meal': meal,
+        },
       );
-      setState(() => loggingMeal = null);
       await load();
       await widget.sync();
     } on ApiException catch (err) {
@@ -1162,21 +1414,15 @@ class _MealCard extends StatelessWidget {
     required this.t,
     required this.meal,
     required this.entries,
-    required this.logging,
-    required this.onToggleLog,
-    required this.onScan,
-    required this.onLookup,
+    required this.onLog,
     required this.onDelete,
   });
 
   final Copy t;
   final String meal;
   final List<Map> entries;
-  final bool logging;
-  final VoidCallback onToggleLog;
-  final Future<void> Function() onScan;
-  final Future<void> Function() onLookup;
-  final Future<void> Function(String id) onDelete;
+  final VoidCallback onLog;
+  final void Function(Map entry) onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -1201,10 +1447,13 @@ class _MealCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '$mealKcal ${t.kcal}',
+                  '${_grouped(mealKcal)} ${t.kcal}',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: apple.accentEnergyText,
+                    fontWeight: mealKcal > 0 ? FontWeight.w600 : FontWeight.w500,
+                    // Zero is not a warning: secondary until something is logged.
+                    color: mealKcal > 0
+                        ? apple.accentEnergyText
+                        : apple.labelSecondary,
                   ),
                 ),
               ],
@@ -1235,7 +1484,7 @@ class _MealCard extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         Text(
-                          '${entry['calories']}',
+                          _grouped((entry['calories'] as num?) ?? 0),
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         IconButton(
@@ -1243,7 +1492,7 @@ class _MealCard extends StatelessWidget {
                             Icons.delete_outline,
                             color: apple.accentDangerText,
                           ),
-                          onPressed: () => onDelete(entry['id'] as String),
+                          onPressed: () => onDelete(entry),
                         ),
                       ],
                     ),
@@ -1252,37 +1501,7 @@ class _MealCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: Gaps.md),
-            logging
-                ? OutlinedButton(onPressed: onToggleLog, child: Text(t.log))
-                : FilledButton(onPressed: onToggleLog, child: Text(t.log)),
-            AnimatedCrossFade(
-              duration: const Duration(milliseconds: 280),
-              sizeCurve: Curves.easeOutCubic,
-              crossFadeState: logging
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              firstChild: const SizedBox(width: double.infinity),
-              secondChild: Padding(
-                padding: const EdgeInsets.only(top: Gaps.sm),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: onScan,
-                        child: Text(t.scan),
-                      ),
-                    ),
-                    const SizedBox(width: Gaps.sm),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: onLookup,
-                        child: Text(t.lookUp),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            FilledButton(onPressed: onLog, child: Text(t.log)),
           ],
         ),
       ),
@@ -1290,8 +1509,18 @@ class _MealCard extends StatelessWidget {
   }
 }
 
+class ScanOutcome {
+  const ScanOutcome.scanned(this.code) : manual = false;
+  const ScanOutcome.manual() : code = null, manual = true;
+
+  final String? code;
+  final bool manual;
+}
+
 class ScanScreen extends StatefulWidget {
-  const ScanScreen({super.key});
+  const ScanScreen({super.key, required this.manualLabel});
+
+  final String manualLabel;
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -1300,22 +1529,462 @@ class ScanScreen extends StatefulWidget {
 class _ScanScreenState extends State<ScanScreen> {
   bool done = false;
 
+  void finish(ScanOutcome outcome) {
+    if (done) return;
+    done = true;
+    Navigator.pop(context, outcome);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(),
-      body: MobileScanner(
-        onDetect: (capture) {
-          if (done) return;
-          final value = capture.barcodes.isEmpty
-              ? null
-              : capture.barcodes.first.rawValue;
-          if (value == null || value.isEmpty) return;
-          done = true;
-          Navigator.pop(context, value);
-        },
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          MobileScanner(
+            onDetect: (capture) {
+              final value = capture.barcodes.isEmpty
+                  ? null
+                  : capture.barcodes.first.rawValue;
+              if (value == null || value.isEmpty) return;
+              finish(ScanOutcome.scanned(value));
+            },
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: Gaps.hit,
+                  child: FilledButton(
+                    onPressed: () => finish(const ScanOutcome.manual()),
+                    child: Text(widget.manualLabel),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+}
+
+/// What the search screen hands back: a food to log, a barcode to look up,
+/// or a request to create a new food (prefilled with [newName]).
+class FoodSearchOutcome {
+  const FoodSearchOutcome.food(Map<String, dynamic> this.food, {this.lastAmount})
+    : barcode = null,
+      newName = null;
+  const FoodSearchOutcome.barcode(String this.barcode)
+    : food = null,
+      lastAmount = null,
+      newName = null;
+  const FoodSearchOutcome.create(this.newName)
+    : food = null,
+      lastAmount = null,
+      barcode = null;
+
+  final Map<String, dynamic>? food;
+  final num? lastAmount;
+  final String? barcode;
+  final String? newName;
+}
+
+class FoodSearchScreen extends StatefulWidget {
+  const FoodSearchScreen({super.key, required this.api, required this.t});
+  final Api api;
+  final Copy t;
+
+  @override
+  State<FoodSearchScreen> createState() => _FoodSearchScreenState();
+}
+
+class _FoodSearchScreenState extends State<FoodSearchScreen> {
+  final query = TextEditingController();
+  Timer? debounce;
+  List<Map<String, dynamic>> recent = [];
+  List<Map<String, dynamic>>? results;
+  String error = '';
+  int searchId = 0;
+
+  static final _barcodePattern = RegExp(r'^\d{6,}$');
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api
+        .send('GET', '/api/foods/recent')
+        .then((data) {
+          if (!mounted) return;
+          setState(
+            () => recent = (data['foods'] as List)
+                .map((item) => (item as Map).cast<String, dynamic>())
+                .toList(),
+          );
+        })
+        .catchError((_) {});
+  }
+
+  @override
+  void dispose() {
+    debounce?.cancel();
+    query.dispose();
+    super.dispose();
+  }
+
+  void onChanged(String value) {
+    debounce?.cancel();
+    final text = value.trim();
+    if (text.length < 2) {
+      setState(() => results = null);
+      return;
+    }
+    debounce = Timer(const Duration(milliseconds: 250), () => search(text));
+    setState(() {});
+  }
+
+  Future<void> search(String text) async {
+    final id = ++searchId;
+    try {
+      final data = await widget.api.send(
+        'GET',
+        '/api/foods/search?q=${Uri.encodeQueryComponent(text)}',
+      );
+      if (!mounted || id != searchId) return;
+      setState(() {
+        error = '';
+        results = (data['foods'] as List)
+            .map((item) => (item as Map).cast<String, dynamic>())
+            .toList();
+      });
+    } on ApiException catch (err) {
+      if (mounted) setState(() => error = widget.t.error(err.code));
+    }
+  }
+
+  void submit() {
+    final text = query.text.trim();
+    if (_barcodePattern.hasMatch(text)) {
+      Navigator.pop(context, FoodSearchOutcome.barcode(text));
+    } else if (results?.length == 1) {
+      Navigator.pop(context, FoodSearchOutcome.food(results!.first));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final apple = context.apple;
+    final text = query.text.trim();
+    final isBarcode = _barcodePattern.hasMatch(text);
+    final showRecent = text.length < 2 && recent.isNotEmpty;
+    final list = showRecent ? recent : (results ?? const []);
+
+    Widget row(Map<String, dynamic> food) {
+      final unit = food['basis'] == 'solid' ? t.grams : t.milliliters;
+      final last = food['lastAmount'] as num?;
+      final detail = [
+        last != null
+            ? '${_plainNumber(last)} $unit'
+            : '${_plainNumber((food['calories'] as num?) ?? 0)} ${t.kcal} / 100 $unit',
+        if (food['verified'] == true) t.verified,
+      ].join(' · ');
+      return ListTile(
+        minTileHeight: Gaps.hit,
+        contentPadding: const EdgeInsets.symmetric(horizontal: Gaps.lg),
+        title: Text(food['name'] as String, overflow: TextOverflow.ellipsis),
+        subtitle: Text(detail, style: TextStyle(color: apple.labelSecondary)),
+        trailing: Icon(Icons.add_circle, color: apple.accentPrimary),
+        onTap: () => Navigator.pop(
+          context,
+          FoodSearchOutcome.food(food, lastAmount: last),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(title: Text(t.log)),
+      body: ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gaps.lg, Gaps.sm, Gaps.lg, Gaps.md),
+            child: TextField(
+              controller: query,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: t.searchFoods,
+                prefixIcon: const Icon(Icons.search),
+              ),
+              onChanged: onChanged,
+              onSubmitted: (_) => submit(),
+            ),
+          ),
+          if (isBarcode)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Gaps.lg),
+              child: FilledButton(onPressed: submit, child: Text(t.lookUp)),
+            ),
+          if (error.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.all(Gaps.lg),
+              child: ErrorText(error),
+            ),
+          if (showRecent)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Gaps.lg, Gaps.sm, Gaps.lg, Gaps.xs),
+              child: Text(
+                t.recentFoods,
+                style: TextStyle(
+                  color: apple.labelSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          for (final food in list) row(food),
+          if (!showRecent && results != null && results!.isEmpty && !isBarcode)
+            Padding(
+              padding: const EdgeInsets.all(Gaps.lg),
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: Gaps.sm,
+                children: [
+                  Text(t.noMatches, style: TextStyle(color: apple.labelSecondary)),
+                  TextButton(
+                    onPressed: () =>
+                        Navigator.pop(context, FoodSearchOutcome.create(text)),
+                    child: Text(t.createFood),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TodayFastCard extends StatelessWidget {
+  const _TodayFastCard({
+    required this.t,
+    required this.fasting,
+    required this.onToggle,
+    required this.onDetails,
+  });
+
+  final Copy t;
+  final Map<String, dynamic> fasting;
+  final VoidCallback onToggle;
+  final VoidCallback onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final apple = context.apple;
+    final running = fasting['running'] == true;
+    final enabled = fasting['enabled'] == true;
+    final endsAt = fasting['endsAt'] as String?;
+    final left = !running || endsAt == null
+        ? Duration.zero
+        : DateTime.parse(endsAt).difference(DateTime.now());
+    final hours =
+        ((fasting['lengthHoursRunning'] ?? fasting['lengthHours']) as num?) ??
+        0;
+    final totalMs = hours * 3600000;
+    final remainingMs = left.isNegative ? 0 : left.inMilliseconds;
+    final ratio = !running || totalMs <= 0
+        ? 0.0
+        : ((totalMs - remainingMs) / totalMs).clamp(0.0, 1.0);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(Gaps.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: CircularProgressIndicator(
+                    value: ratio,
+                    strokeWidth: 8,
+                    // A round cap at 0% would draw a stray dot.
+                    strokeCap: ratio > 0 ? StrokeCap.round : StrokeCap.butt,
+                    backgroundColor: apple.tertiaryFill,
+                    color: apple.accentEnergy,
+                  ),
+                ),
+                const SizedBox(width: Gaps.lg),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t.fasting,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: Gaps.xs),
+                      if (enabled && running) ...[
+                        Text(
+                          _clock(left),
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.4,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        Text(
+                          '${t.approximateEnd}: ${endsAt == null ? '' : _jerusalemTime(endsAt)}',
+                          style: TextStyle(
+                            color: apple.labelSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ] else if (enabled)
+                        Text(
+                          '${t.scheduled}: ${fasting['startHour'].toString().padLeft(2, '0')}:00 – ${fasting['endHour'].toString().padLeft(2, '0')}:00 · ${fasting['lengthHours']} ${t.hours}',
+                          style: TextStyle(color: apple.labelSecondary),
+                        )
+                      else
+                        Text(
+                          t.error('fasting_disabled'),
+                          style: TextStyle(color: apple.labelSecondary),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Gaps.md),
+            Row(
+              children: [
+                if (enabled) ...[
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: running
+                            ? apple.tertiaryFill
+                            : apple.accentEnergy.withValues(alpha: 0.16),
+                        foregroundColor: running
+                            ? apple.accentDangerText
+                            : apple.accentEnergyText,
+                        elevation: 0,
+                        shadowColor: Colors.transparent,
+                      ),
+                      onPressed: onToggle,
+                      child: Text(running ? t.stopFast : t.startFast),
+                    ),
+                  ),
+                  const SizedBox(width: Gaps.sm),
+                ],
+                Expanded(
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size.fromHeight(Gaps.hit),
+                    ),
+                    onPressed: onDetails,
+                    child: Text(t.moreDetails),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RingSlice {
+  const _RingSlice(this.color, this.fraction);
+
+  final Color color;
+  final double fraction;
+}
+
+Color _mealColor(AppleColors apple, String meal) {
+  switch (meal) {
+    case 'breakfast':
+      return apple.accentPrimary;
+    case 'lunch':
+      return apple.accentEnergy;
+    case 'dinner':
+      return apple.accentSuccess;
+    default:
+      return apple.labelSecondary;
+  }
+}
+
+class _MealRingPainter extends CustomPainter {
+  _MealRingPainter({
+    required this.slices,
+    required this.track,
+    required this.progress,
+  });
+
+  final List<_RingSlice> slices;
+  final Color track;
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 10.0;
+    final center = size.center(Offset.zero);
+    final radius = (size.shortestSide - stroke) / 2;
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..color = track,
+    );
+    final active = slices.where((slice) => slice.fraction > 0).toList();
+    final gap = active.length > 1 ? 0.08 : 0.0;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    var start = -pi / 2 + gap / 2;
+    for (final slice in active) {
+      final sweep = slice.fraction * progress * 2 * pi;
+      final separated = sweep > gap * 2;
+      final drawn = separated ? sweep - gap : sweep;
+      if (drawn > 0) {
+        canvas.drawArc(
+          rect,
+          start,
+          drawn,
+          false,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = stroke
+            ..strokeCap = StrokeCap.round
+            ..color = slice.color,
+        );
+      }
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MealRingPainter old) {
+    if (old.progress != progress ||
+        old.track != track ||
+        old.slices.length != slices.length) {
+      return true;
+    }
+    for (var i = 0; i < slices.length; i++) {
+      if (old.slices[i].color != slices[i].color ||
+          old.slices[i].fraction != slices[i].fraction) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -1375,6 +2044,13 @@ class _FastingScreenState extends State<FastingScreen> {
     final left = endsAt == null
         ? Duration.zero
         : DateTime.parse(endsAt).difference(DateTime.now());
+    final totalHours =
+        (fasting?['lengthHoursRunning'] ?? fasting?['lengthHours']) as num? ?? 0;
+    final totalMs = totalHours * 3600 * 1000;
+    final leftMs = left.isNegative ? 0 : left.inMilliseconds;
+    final fastRatio = totalMs > 0
+        ? ((totalMs - leftMs) / totalMs).clamp(0.0, 1.0).toDouble()
+        : 0.0;
     final sessions = ((fasting?['sessions'] as List?) ?? []).cast<Map>();
     final apple = context.apple;
     final dark = Theme.of(context).brightness == Brightness.dark;
@@ -1412,17 +2088,40 @@ class _FastingScreenState extends State<FastingScreen> {
                   ),
                 ),
                 if (enabled && running) ...[
-                  const SizedBox(height: Gaps.sm),
-                  Text(
-                    _clock(left),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 52,
-                      fontWeight: FontWeight.w300,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                  const SizedBox(height: Gaps.md),
+                  Center(
+                    child: SizedBox(
+                      width: 230,
+                      height: 230,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Positioned.fill(
+                            child: CircularProgressIndicator(
+                              value: fastRatio,
+                              strokeWidth: 12,
+                              strokeCap: fastRatio > 0
+                                  ? StrokeCap.round
+                                  : StrokeCap.butt,
+                              backgroundColor: Colors.white24,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            _clock(left),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 40,
+                              fontWeight: FontWeight.w300,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
+                  const SizedBox(height: Gaps.md),
                   Text(
                     '${t.approximateEnd}: ${endsAt == null ? '' : _jerusalemTime(endsAt)}',
                     textAlign: TextAlign.center,
@@ -1570,57 +2269,221 @@ class _WeekScreenState extends State<WeekScreen> {
   Widget build(BuildContext context) {
     final t = widget.t;
     if (week == null) return const Center(child: CircularProgressIndicator());
-    final days = (week!['days'] as List)
-        .cast<Map>()
+    final sunday = week!['sunday'] as String;
+    final today = _todayJerusalem();
+    final isCurrentWeek = _shift(sunday, 7).compareTo(today) > 0;
+    final allDays = (week!['days'] as List).cast<Map>();
+    final days = allDays
         .where(
           (day) =>
               day['future'] != true && ((day['calories'] as num?) ?? 0) > 0,
         )
         .toList();
+    final byDay = {for (final day in allDays) day['day'] as String: day};
+    final dailyGoal = ((week!['goalKcal'] as num?) ?? 0) / 7;
+    final chart = [
+      for (var i = 0; i < 7; i++)
+        (
+          date: _shift(sunday, i),
+          calories: ((byDay[_shift(sunday, i)]?['calories'] as num?) ?? 0)
+              .toDouble(),
+          status: byDay[_shift(sunday, i)]?['status'] as String?,
+        ),
+    ];
+    final scale = [
+      dailyGoal * 1.25,
+      ...chart.map((day) => day.calories),
+      1.0,
+    ].reduce(max);
     final apple = context.apple;
+    final weekNavStyle = IconButton.styleFrom(
+      backgroundColor: apple.accentTint,
+      foregroundColor: apple.accentPrimary,
+      disabledBackgroundColor: apple.tertiaryFill,
+      disabledForegroundColor: apple.labelSecondary,
+    );
+    final change = week!['weightChangeKg'] as num?;
+    Color barColor(String? status) => switch (status) {
+      'met' => apple.accentSuccess,
+      'over' => apple.accentEnergy,
+      _ => apple.accentPrimary,
+    };
+    Widget stat(String label, String value, [String? suffix]) => Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Gaps.md,
+          vertical: Gaps.sm,
+        ),
+        decoration: BoxDecoration(
+          color: apple.tertiaryFill,
+          borderRadius: BorderRadius.circular(Radii.sm),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(color: apple.labelSecondary, fontSize: 12),
+            ),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+            if (suffix != null)
+              Text(
+                suffix,
+                style: TextStyle(color: apple.labelSecondary, fontSize: 12),
+              ),
+          ],
+        ),
+      ),
+    );
     return FadeIn(
-      key: ValueKey(week!['sunday']),
+      key: ValueKey(sunday),
       child: AppList(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () {
-                    on = _shift(week!['sunday'] as String, -7);
-                    load();
-                  },
-                  child: Text(t.previousWeek),
-                ),
-              ),
-              const SizedBox(width: Gaps.sm),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () {
-                    on = _shift(week!['sunday'] as String, 7);
-                    load();
-                  },
-                  child: Text(t.nextWeek),
-                ),
-              ),
-            ],
-          ),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(Gaps.lg),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    '${t.calorieIntake}: ${week!['calorieIntake']} / ${week!['goalKcal']}',
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          t.weekRange(sunday),
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      IconButton.filled(
+                        style: weekNavStyle,
+                        tooltip: t.previousWeek,
+                        onPressed: () {
+                          on = _shift(sunday, -7);
+                          load();
+                        },
+                        icon: const DirectionalChevron(back: true),
+                      ),
+                      const SizedBox(width: Gaps.sm),
+                      IconButton.filled(
+                        style: weekNavStyle,
+                        tooltip: t.nextWeek,
+                        onPressed: isCurrentWeek
+                            ? null
+                            : () {
+                                on = _shift(sunday, 7);
+                                load();
+                              },
+                        icon: const DirectionalChevron(),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: Gaps.xs),
-                  Text('${t.successCount}: ${week!['successCount']}'),
-                  const SizedBox(height: Gaps.xs),
-                  Text(
-                    '${t.weightChange}: ${week!['weightChangeKg'] ?? t.noWeightChange}',
-                    style: TextStyle(color: apple.labelSecondary),
+                  const SizedBox(height: Gaps.lg),
+                  SizedBox(
+                    height: 150,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          bottom: 22,
+                          child: Align(
+                            alignment: Alignment(0, 1 - 2 * (dailyGoal / scale)),
+                            child: Container(
+                              height: 1,
+                              color: apple.labelSecondary.withValues(
+                                alpha: 0.4,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (final day in chart)
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    Expanded(
+                                      child: Center(
+                                        child: Container(
+                                          width: 26,
+                                          decoration: BoxDecoration(
+                                            color: apple.tertiaryFill,
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          alignment: Alignment.bottomCenter,
+                                          child: FractionallySizedBox(
+                                            heightFactor: (day.calories / scale)
+                                                .clamp(0.0, 1.0),
+                                            widthFactor: 1,
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: barColor(day.status),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      t.weekdaysShort[DateTime.parse(
+                                            '${day.date}T12:00:00Z',
+                                          ).weekday %
+                                          7],
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: day.date == today
+                                            ? apple.accentPrimary
+                                            : apple.labelSecondary,
+                                        fontWeight: day.date == today
+                                            ? FontWeight.w600
+                                            : FontWeight.w400,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(height: Gaps.lg),
+                  Row(
+                    spacing: Gaps.sm,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      stat(
+                        t.calorieIntake,
+                        _grouped((week!['calorieIntake'] as num?) ?? 0),
+                        '/ ${_grouped((week!['goalKcal'] as num?) ?? 0)}',
+                      ),
+                      stat(t.successCount, '${week!['successCount']}'),
+                      stat(
+                        t.weightChange,
+                        change == null
+                            ? '—'
+                            : '${change > 0 ? '+' : ''}$change ${t.kg}',
+                      ),
+                    ],
+                  ),
+                  if (change == null) ...[
+                    const SizedBox(height: Gaps.sm),
+                    Text(
+                      t.noWeightChange,
+                      style: TextStyle(color: apple.labelSecondary),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1639,19 +2502,24 @@ class _WeekScreenState extends State<WeekScreen> {
                       ),
                     ListTile(
                       minTileHeight: Gaps.hit,
-                      title: Text(days[i]['day'] as String),
+                      title: Text(t.dayLabel(days[i]['day'] as String)),
                       subtitle: Text(
                         [
-                          '${days[i]['calories']} / ${days[i]['goalKcal']}',
+                          '${_grouped(days[i]['calories'] as num)} / ${_grouped(days[i]['goalKcal'] as num)} ${t.kcal}',
                           if (days[i]['steps'] != null)
-                            '${t.healthSteps} ${_grouped(days[i]['steps'] as num)} · ${t.healthExercise} ${days[i]['exerciseMinutes'] ?? 0} ${t.healthMinutes}'
-                                '${((days[i]['activeKcal'] as num?) ?? 0) > 0 ? ' · ${t.healthActiveKcal} +${days[i]['activeKcal']} ${t.kcal}' : ''}',
+                            '${t.healthSteps} ${_grouped(days[i]['steps'] as num)} · ${t.healthExercise} ${days[i]['exerciseMinutes'] ?? 0} ${t.healthMinutes}',
                         ].join('\n'),
                         style: TextStyle(color: apple.labelSecondary),
                       ),
                       trailing: Text(
-                        days[i]['success'] == true ? t.success : t.missed,
-                        style: TextStyle(color: apple.labelSecondary),
+                        t.dayStatus(days[i]['status'] as String?),
+                        style: TextStyle(
+                          color: switch (days[i]['status']) {
+                            'met' => apple.accentSuccessText,
+                            'over' => apple.accentEnergyText,
+                            _ => apple.labelSecondary,
+                          },
+                        ),
                       ),
                     ),
                   ],
@@ -1662,6 +2530,12 @@ class _WeekScreenState extends State<WeekScreen> {
       ),
     );
   }
+}
+
+/// Today's date in Jerusalem as YYYY-MM-DD (the API's day boundary).
+String _todayJerusalem() {
+  final now = tz.TZDateTime.now(tz.getLocation('Asia/Jerusalem'));
+  return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 }
 
 class WeightScreen extends StatefulWidget {
@@ -1762,7 +2636,7 @@ class _WeightScreenState extends State<WeightScreen> {
                     minTileHeight: Gaps.hit,
                     title: Text('${point['weightKg']} kg'),
                     subtitle: Text(
-                      '${point['loggedAt']} · ${point['source'] == 'health' ? t.healthSource : t.manualSource}',
+                      '${_jerusalemDate(point['loggedAt'] as String)} ${_jerusalemTime(point['loggedAt'] as String)} · ${point['source'] == 'health' ? t.healthSource : t.manualSource}',
                       style: TextStyle(color: apple.labelSecondary),
                     ),
                   ),
@@ -1866,6 +2740,8 @@ class SettingsScreen extends StatefulWidget {
     required this.onMe,
     required this.health,
     required this.sync,
+    required this.onLogout,
+    this.isAdmin = false,
   });
   final Api api;
   final Copy t;
@@ -1875,6 +2751,8 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>> onMe;
   final AppleHealth health;
   final Future<void> Function() sync;
+  final Future<void> Function() onLogout;
+  final bool isAdmin;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -2092,6 +2970,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     currentPassword.dispose();
     newPassword.dispose();
     confirmPassword.dispose();
+    _revision.dispose();
     super.dispose();
   }
 
@@ -2104,10 +2983,250 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
+  /// Bumped on every setState so pushed section pages rebuild too.
+  final _revision = ValueNotifier(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _revision.value++;
+  }
+
+  void _openSection(String title, List<Widget> Function(BuildContext) build) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: Text(title)),
+          body: ValueListenableBuilder<int>(
+            valueListenable: _revision,
+            builder: (context, _, _) => AppList(children: build(context)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _row(
+    String title, {
+    String? value,
+    Color? color,
+    bool chevron = true,
+    required VoidCallback onTap,
+  }) {
+    final apple = context.apple;
+    return ListTile(
+      minTileHeight: Gaps.hit,
+      title: Text(title, style: TextStyle(color: color)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: Gaps.xs,
+        children: [
+          if (value != null)
+            Text(value, style: TextStyle(color: apple.labelSecondary)),
+          if (chevron)
+            DirectionalChevron(color: apple.labelSecondary, size: 18),
+        ],
+      ),
+      onTap: onTap,
+    );
+  }
+
+  List<Widget> _profileSection(BuildContext context) {
+    final t = widget.t;
+    return [
+        if (profile != null)
+          ProfileEditor(
+            key: ValueKey(
+              [
+                profile!['sex'],
+                profile!['dateOfBirth'],
+                profile!['heightCm'],
+                profile!['weightKg'],
+                profile!['activity'],
+                profile!['weeklyPace'],
+                profile!['customGoalKcal'],
+              ].join('|'),
+            ),
+            api: widget.api,
+            t: t,
+            profile: profile!,
+            onSaved: () async {
+              await load();
+              await widget.sync();
+              if (context.mounted) Navigator.of(context).maybePop();
+            },
+          ),
+    ];
+  }
+
+  List<Widget> _fastingSection(BuildContext context) {
+    final t = widget.t;
+    return [
+        if (fasting != null)
+          FastingEditor(
+            t: t,
+            fasting: fasting!,
+            onSave: (body) async {
+              await widget.api.send('PUT', '/api/fasting', body: body);
+              await load();
+              await widget.sync();
+              if (context.mounted) Navigator.of(context).maybePop();
+            },
+          ),
+    ];
+  }
+
+  List<Widget> _healthSection(BuildContext context) => [
+        if (healthState != null) _healthCard(context),
+  ];
+
+  List<Widget> _accountSection(BuildContext context) {
+    final t = widget.t;
+    final apple = context.apple;
+    return [
+        if (widget.me['hasPassword'] != false)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(Gaps.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t.changePassword,
+                    style: Theme.of(context).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: Gaps.md),
+                  TextField(
+                    controller: currentPassword,
+                    // Emails and passwords are Latin text: keep them LTR in Hebrew too.
+                    textDirection: TextDirection.ltr,
+                    decoration: InputDecoration(labelText: t.currentPassword),
+                    obscureText: true,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: Gaps.md),
+                  TextField(
+                    controller: newPassword,
+                    // Emails and passwords are Latin text: keep them LTR in Hebrew too.
+                    textDirection: TextDirection.ltr,
+                    decoration: InputDecoration(labelText: t.newPassword),
+                    obscureText: true,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: Gaps.md),
+                  TextField(
+                    controller: confirmPassword,
+                    // Emails and passwords are Latin text: keep them LTR in Hebrew too.
+                    textDirection: TextDirection.ltr,
+                    decoration: InputDecoration(labelText: t.confirmPassword),
+                    obscureText: true,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: Gaps.md),
+                  Text(
+                    t.passwordRulesTitle,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: Gaps.xs),
+                  RuleRow(_ruleLength, t.ruleLength),
+                  RuleRow(_ruleEnglish, t.ruleEnglish),
+                  RuleRow(_ruleUppercase, t.ruleUppercase),
+                  RuleRow(_ruleNumber, t.ruleNumber),
+                  RuleRow(_ruleSymbol, t.ruleSymbol),
+                  RuleRow(_ruleMatch, t.ruleMatch),
+                  if (passwordError.isNotEmpty) ...[
+                    const SizedBox(height: Gaps.sm),
+                    ErrorText(passwordError),
+                  ],
+                  if (passwordStatus.isNotEmpty) ...[
+                    const SizedBox(height: Gaps.sm),
+                    Text(
+                      passwordStatus,
+                      style: TextStyle(color: apple.accentSuccessText),
+                    ),
+                  ],
+                  const SizedBox(height: Gaps.md),
+                  FilledButton(
+                    onPressed: !_passwordValid
+                        ? null
+                        : () async {
+                            try {
+                              await widget.api.send(
+                                'PUT',
+                                '/api/auth/password',
+                                body: {
+                                  'currentPassword': currentPassword.text,
+                                  'newPassword': newPassword.text,
+                                  'confirmPassword': confirmPassword.text,
+                                },
+                              );
+                              if (mounted) {
+                                setState(() {
+                                  currentPassword.clear();
+                                  newPassword.clear();
+                                  confirmPassword.clear();
+                                  passwordError = '';
+                                  passwordStatus = t.passwordChanged;
+                                });
+                              }
+                            } on ApiException catch (err) {
+                              if (mounted) {
+                                setState(() {
+                                  passwordStatus = '';
+                                  passwordError = t.error(err.code);
+                                });
+                              }
+                            }
+                          },
+                    child: Text(t.save),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        Card(
+          child: Column(
+            children: [
+              if (widget.isAdmin)
+                _row(
+                  t.permissions,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => Scaffold(
+                        appBar: AppBar(title: Text(t.permissions)),
+                        body: PermissionsScreen(api: widget.api, t: t),
+                      ),
+                    ),
+                  ),
+                ),
+              _row(
+                t.logout,
+                color: apple.accentDangerText,
+                chevron: false,
+                onTap: () {
+                  Navigator.of(context).maybePop();
+                  widget.onLogout();
+                },
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
     final apple = context.apple;
+    final separator = Divider(
+      color: apple.separator,
+      thickness: 0.5,
+      height: 0.5,
+      indent: Gaps.lg,
+    );
     return AppList(
       children: [
         Card(
@@ -2200,133 +3319,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ),
-        if (widget.me['hasPassword'] != false)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(Gaps.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    t.changePassword,
-                    style: Theme.of(context).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: Gaps.md),
-                  TextField(
-                    controller: currentPassword,
-                    decoration: InputDecoration(labelText: t.currentPassword),
-                    obscureText: true,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: Gaps.md),
-                  TextField(
-                    controller: newPassword,
-                    decoration: InputDecoration(labelText: t.newPassword),
-                    obscureText: true,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: Gaps.md),
-                  TextField(
-                    controller: confirmPassword,
-                    decoration: InputDecoration(labelText: t.confirmPassword),
-                    obscureText: true,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: Gaps.md),
-                  Text(
-                    t.passwordRulesTitle,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: Gaps.xs),
-                  RuleRow(_ruleLength, t.ruleLength),
-                  RuleRow(_ruleEnglish, t.ruleEnglish),
-                  RuleRow(_ruleUppercase, t.ruleUppercase),
-                  RuleRow(_ruleNumber, t.ruleNumber),
-                  RuleRow(_ruleSymbol, t.ruleSymbol),
-                  RuleRow(_ruleMatch, t.ruleMatch),
-                  if (passwordError.isNotEmpty) ...[
-                    const SizedBox(height: Gaps.sm),
-                    ErrorText(passwordError),
-                  ],
-                  if (passwordStatus.isNotEmpty) ...[
-                    const SizedBox(height: Gaps.sm),
-                    Text(
-                      passwordStatus,
-                      style: TextStyle(color: apple.accentSuccessText),
-                    ),
-                  ],
-                  const SizedBox(height: Gaps.md),
-                  FilledButton(
-                    onPressed: !_passwordValid
-                        ? null
-                        : () async {
-                            try {
-                              await widget.api.send(
-                                'PUT',
-                                '/api/auth/password',
-                                body: {
-                                  'currentPassword': currentPassword.text,
-                                  'newPassword': newPassword.text,
-                                  'confirmPassword': confirmPassword.text,
-                                },
-                              );
-                              if (mounted) {
-                                setState(() {
-                                  currentPassword.clear();
-                                  newPassword.clear();
-                                  confirmPassword.clear();
-                                  passwordError = '';
-                                  passwordStatus = t.passwordChanged;
-                                });
-                              }
-                            } on ApiException catch (err) {
-                              if (mounted) {
-                                setState(() {
-                                  passwordStatus = '';
-                                  passwordError = t.error(err.code);
-                                });
-                              }
-                            }
-                          },
-                    child: Text(t.save),
-                  ),
-                ],
+        Card(
+          child: Column(
+            children: [
+              _row(
+                t.profileTitle,
+                onTap: () => _openSection(t.profileTitle, _profileSection),
               ),
-            ),
+              separator,
+              _row(
+                t.fasting,
+                value: fasting == null
+                    ? null
+                    : fasting!['enabled'] == true
+                    ? '${fasting!['lengthHours']} ${t.hours}'
+                    : t.off,
+                onTap: () => _openSection(t.fasting, _fastingSection),
+              ),
+              if (healthState != null) ...[
+                separator,
+                _row(
+                  t.appleHealth,
+                  value: healthState!['connected'] == true
+                      ? t.healthConnected
+                      : t.healthNotConnected,
+                  onTap: () => _openSection(t.appleHealth, _healthSection),
+                ),
+              ],
+              separator,
+              _row(
+                t.account,
+                onTap: () => _openSection(t.account, _accountSection),
+              ),
+            ],
           ),
-        if (fasting != null)
-          FastingEditor(
-            t: t,
-            fasting: fasting!,
-            onSave: (body) async {
-              await widget.api.send('PUT', '/api/fasting', body: body);
-              await load();
-              await widget.sync();
-            },
-          ),
-        if (healthState != null) _healthCard(context),
-        if (profile != null)
-          ProfileEditor(
-            key: ValueKey(
-              [
-                profile!['sex'],
-                profile!['dateOfBirth'],
-                profile!['heightCm'],
-                profile!['weightKg'],
-                profile!['activity'],
-                profile!['weeklyPace'],
-                profile!['customGoalKcal'],
-              ].join('|'),
-            ),
-            api: widget.api,
-            t: t,
-            profile: profile!,
-            onSaved: () async {
-              await load();
-              await widget.sync();
-            },
-          ),
+        ),
       ],
     );
   }
@@ -2485,7 +3512,7 @@ class _ProfileEditorState extends State<ProfileEditor> {
               t.dailyGoal,
               onChanged: (_) => setState(() => touchedGoal = true),
             ),
-            if (_suggested != null) ...[
+            if (_suggested != null && touchedGoal) ...[
               const SizedBox(height: Gaps.sm),
               OutlinedButton(
                 onPressed: () => setState(() {
@@ -2690,24 +3717,65 @@ class FoodActions extends StatefulWidget {
     required this.t,
     required this.food,
     required this.admin,
+    this.initialAmount = 100,
   });
   final Api api;
   final Copy t;
   final Map<String, dynamic> food;
   final bool admin;
+  final num initialAmount;
 
   @override
   State<FoodActions> createState() => _FoodActionsState();
 }
 
+class FoodPick {
+  const FoodPick(this.food, this.amount);
+  final Map<String, dynamic> food;
+  final num amount;
+}
+
 class _FoodActionsState extends State<FoodActions> {
   late Map<String, dynamic> food = widget.food;
+  late final amount = TextEditingController(
+    text: _plainNumber(widget.initialAmount),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    amount.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: amount.text.length,
+    );
+  }
+
+  @override
+  void dispose() {
+    amount.dispose();
+    super.dispose();
+  }
+
+  num? get parsedAmount {
+    final value = parseDecimal(amount.text);
+    return value == null || value <= 0 ? null : value;
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
+    final apple = context.apple;
+    final unit = food['basis'] == 'solid' ? t.grams : t.milliliters;
+    final per100 = (food['calories'] as num?) ?? 0;
+    final value = parsedAmount;
+    final kcal = value == null ? 0 : (per100 * value / 100).round();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Gaps.lg, 0, Gaps.lg, Gaps.lg),
+      padding: EdgeInsets.fromLTRB(
+        Gaps.lg,
+        0,
+        Gaps.lg,
+        Gaps.lg + MediaQuery.viewInsetsOf(context).bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2718,11 +3786,44 @@ class _FoodActionsState extends State<FoodActions> {
             style: Theme.of(context).textTheme.titleLarge
                 ?.copyWith(fontWeight: FontWeight.w700),
           ),
-          if (food['verified'] == true)
-            Text(
-              t.verified,
-              style: TextStyle(color: context.apple.accentSuccessText),
-            ),
+          Text(
+            [
+              '${_plainNumber(per100)} ${t.kcal} / 100 $unit',
+              if (food['verified'] == true) t.verified,
+            ].join(' · '),
+            style: TextStyle(color: apple.labelSecondary),
+          ),
+          Row(
+            spacing: Gaps.md,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: amount,
+                  autofocus: true,
+                  decoration: InputDecoration(labelText: '${t.amount} ($unit)'),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: const [DecimalInputFormatter()],
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              Text(
+                '= $kcal ${t.kcal}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: apple.accentEnergyText,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          FilledButton(
+            onPressed: value == null
+                ? null
+                : () => Navigator.pop(context, FoodPick(food, value)),
+            child: Text(t.add),
+          ),
           if (food['owned'] == true)
             OutlinedButton(
               onPressed: () async {
@@ -2754,10 +3855,6 @@ class _FoodActionsState extends State<FoodActions> {
               },
               child: Text(t.verify),
             ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, food),
-            child: Text(t.add),
-          ),
         ],
       ),
     );
@@ -2893,26 +3990,31 @@ class FoodScreen extends StatefulWidget {
     super.key,
     required this.api,
     required this.t,
-    required this.barcode,
+    this.barcode,
+    this.initialName,
   });
   final Api api;
   final Copy t;
-  final String barcode;
+
+  /// Known when the food was scanned; otherwise the user types it.
+  final String? barcode;
+  final String? initialName;
 
   @override
   State<FoodScreen> createState() => _FoodScreenState();
 }
 
 class _FoodScreenState extends State<FoodScreen> {
-  final name = TextEditingController();
+  late final name = TextEditingController(text: widget.initialName ?? '');
+  late final barcode = TextEditingController(text: widget.barcode ?? '');
   String basis = 'solid';
-  final calories = TextEditingController(text: '0');
-  final protein = TextEditingController(text: '0');
-  final carbohydrates = TextEditingController(text: '0');
-  final fat = TextEditingController(text: '0');
-  final fiber = TextEditingController(text: '0');
-  final sugars = TextEditingController(text: '0');
-  final sodium = TextEditingController(text: '0');
+  final calories = TextEditingController();
+  final protein = TextEditingController();
+  final carbohydrates = TextEditingController();
+  final fat = TextEditingController();
+  final fiber = TextEditingController();
+  final sugars = TextEditingController();
+  final sodium = TextEditingController();
   String error = '';
 
   @override
@@ -2923,15 +4025,26 @@ class _FoodScreenState extends State<FoodScreen> {
       body: AppList(
         gap: Gaps.md,
         children: [
-          Text(
-            '${t.barcode}: ${widget.barcode}',
-            style: TextStyle(color: context.apple.labelSecondary),
-          ),
+          if (widget.barcode != null)
+            Text(
+              '${t.barcode}: ${widget.barcode}',
+              style: TextStyle(color: context.apple.labelSecondary),
+            )
+          else
+            TextField(
+              controller: barcode,
+              decoration: InputDecoration(
+                labelText: t.barcode,
+                hintText: t.optional,
+              ),
+              keyboardType: TextInputType.number,
+            ),
           TextField(
             controller: name,
             decoration: InputDecoration(labelText: t.name),
           ),
           AppleMenuField<String>(
+            label: t.measuredAs,
             value: basis,
             options: [
               AppleMenuOption('solid', t.solid),
@@ -2939,26 +4052,37 @@ class _FoodScreenState extends State<FoodScreen> {
             ],
             onChanged: (value) => setState(() => basis = value),
           ),
-          decimalField(calories, t.calories),
-          decimalField(protein, t.protein),
-          decimalField(carbohydrates, t.carbohydrates),
-          decimalField(fat, t.fat),
-          decimalField(fiber, t.fiber),
-          decimalField(sugars, t.sugars),
-          decimalField(sodium, t.sodium),
+          decimalField(calories, t.calories, hint: '0'),
+          for (final pair in [
+            [(protein, t.protein), (carbohydrates, t.carbohydrates)],
+            [(fat, t.fat), (fiber, t.fiber)],
+            [(sugars, t.sugars), (sodium, t.sodium)],
+          ])
+            Row(
+              spacing: Gaps.md,
+              children: [
+                for (final (controller, label) in pair)
+                  Expanded(
+                    child: decimalField(controller, label, hint: t.optional),
+                  ),
+              ],
+            ),
           if (error.isNotEmpty) ErrorText(error),
           FilledButton(
             onPressed: () async {
               try {
                 final values = [
-                  calories.text,
-                  protein.text,
-                  carbohydrates.text,
-                  fat.text,
-                  fiber.text,
-                  sugars.text,
-                  sodium.text,
-                ].map(parseDecimal).toList();
+                  parseDecimal(calories.text),
+                  ...[
+                    protein.text,
+                    carbohydrates.text,
+                    fat.text,
+                    fiber.text,
+                    sugars.text,
+                    sodium.text,
+                  ].map(_parseOptional),
+                ];
+                final code = barcode.text.trim();
                 if (values.any((value) => value == null)) {
                   setState(() => error = t.error('invalid_body'));
                   return;
@@ -2967,7 +4091,7 @@ class _FoodScreenState extends State<FoodScreen> {
                   'POST',
                   '/api/foods',
                   body: {
-                    'barcode': widget.barcode,
+                    'barcode': code.isEmpty ? null : code,
                     'name': name.text.trim(),
                     'basis': basis,
                     'calories': values[0],
@@ -3012,11 +4136,17 @@ Widget decimalField(
   TextEditingController controller,
   String label, {
   ValueChanged<String>? onChanged,
+  String? hint,
+  String? helper,
 }) {
   return TextField(
     controller: controller,
     onChanged: onChanged,
-    decoration: InputDecoration(labelText: label),
+    decoration: InputDecoration(
+      labelText: label,
+      hintText: hint,
+      helperText: helper,
+    ),
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
     inputFormatters: const [DecimalInputFormatter()],
   );
@@ -3044,30 +4174,14 @@ num? parseDecimal(String raw) {
   return num.tryParse(text);
 }
 
-Future<String?> askText(BuildContext context, String label) {
-  final controller = TextEditingController();
-  return showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(label),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        keyboardType: TextInputType.number,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('OK'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, controller.text.trim()),
-          child: const Text('OK'),
-        ),
-      ],
-    ),
-  );
+/// 100 -> "100", 97.5 -> "97.5" (no trailing ".0").
+String _plainNumber(num value) {
+  if (value == value.roundToDouble()) return value.round().toString();
+  return value.toString();
 }
+
+/// Empty optional nutrient fields count as 0.
+num? _parseOptional(String raw) => raw.trim().isEmpty ? 0 : parseDecimal(raw);
 
 String _fastLength(Map session) {
   final minutes = session['durationMinutes'];
@@ -3278,8 +4392,11 @@ class _EaseBuilderState extends State<EaseBuilder>
   }
 }
 
+/// Whole number with thousands separators: 1603.4 -> "1,603", -1234 -> "-1,234".
 String _grouped(num value) {
-  final digits = value.round().toString();
+  final rounded = value.round();
+  if (rounded < 0) return '-${_grouped(-rounded)}';
+  final digits = rounded.toString();
   final buffer = StringBuffer();
   for (var i = 0; i < digits.length; i++) {
     if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');

@@ -12,7 +12,14 @@ class ApiException implements Exception {
 }
 
 class Api {
-  Api({this.baseUrl = 'https://api-dropit.yarinlevi.dev'});
+  /// Production by default; local builds can pass
+  /// `--dart-define=API_BASE_URL=http://localhost:4000`.
+  Api({
+    this.baseUrl = const String.fromEnvironment(
+      'API_BASE_URL',
+      defaultValue: 'https://api-dropit.yarinlevi.dev',
+    ),
+  });
 
   final String baseUrl;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -52,6 +59,31 @@ class Api {
     try {
       final file = await _themeFile();
       await file.writeAsString(jsonEncode({'mode': mode}), flush: true);
+    } catch (_) {}
+  }
+
+  Future<File> _langFile() async {
+    final dir = await getApplicationSupportDirectory();
+    return File('${dir.path}/language.json');
+  }
+
+  /// Language picked while signed out ('en' | 'he'), or null. The account's
+  /// language wins once signed in.
+  Future<String?> loadLanguage() async {
+    try {
+      final file = await _langFile();
+      if (await file.exists()) {
+        final lang = (jsonDecode(await file.readAsString()) as Map)['lang'];
+        if (lang == 'en' || lang == 'he') return lang as String;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> saveLanguage(String lang) async {
+    try {
+      final file = await _langFile();
+      await file.writeAsString(jsonEncode({'lang': lang}), flush: true);
     } catch (_) {}
   }
 

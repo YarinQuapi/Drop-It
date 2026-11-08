@@ -80,20 +80,14 @@ class Copy {
   String get goal => pick('Calorie goal', 'יעד קלוריות');
   String get eaten => pick('Eaten', 'נאכל');
   String get remaining => pick('Remaining', 'נותר');
-  String get estimate => pick(
-    'This number is an estimate from the Mifflin–St Jeor formula.',
-    'המספר הזה הוא אומדן לפי נוסחת מיפלין–סנט ג׳ור.',
-  );
+  String get estimate =>
+      pick('Estimated from your body stats.', 'אומדן לפי נתוני הגוף שלכם.');
   String get appleHealth => 'Apple Health';
   String get healthSteps => pick('Steps', 'צעדים');
   String get healthExercise => pick('Exercise', 'פעילות גופנית');
   String get healthMinutes => pick('min', 'דק׳');
   String get healthActiveKcal => pick('Active calories', 'קלוריות פעילות');
   String get healthBaseGoal => pick('Base goal', 'יעד בסיס');
-  String get healthEstimate => pick(
-    "Today's goal is a sedentary base plus the active calories from Apple Health.",
-    'היעד של היום הוא בסיס יושבני בתוספת הקלוריות הפעילות מ-Apple Health.',
-  );
   String get healthLastSync => pick('Last sync', 'סנכרון אחרון');
   String get healthNever => pick('Never', 'אף פעם');
   String get healthConnected => pick('Connected', 'מחובר');
@@ -120,8 +114,58 @@ class Copy {
   String get healthSource => 'Apple Health';
   String get manualSource => pick('Manual', 'ידני');
   String get barcode => pick('Barcode', 'ברקוד');
+  String get enterBarcode =>
+      pick('Enter barcode manually', 'הזנת ברקוד ידנית');
   String get scan => pick('Scan', 'סריקה');
   String get lookUp => pick('Look up', 'חיפוש');
+  String get searchFoods =>
+      pick('Search foods or enter a barcode', 'חיפוש מזון או הזנת ברקוד');
+  String get searchInstead => pick('Search or type a barcode', 'חיפוש או הקלדת ברקוד');
+  String get recentFoods => pick('Recent', 'אחרונים');
+  String get noMatches => pick('No matching foods.', 'לא נמצא מזון תואם.');
+  String get measuredAs => pick('Measured as', 'נמדד לפי');
+  String get optional => pick('Optional', 'רשות');
+  String get cancel => pick('Cancel', 'ביטול');
+  String get undo => pick('Undo', 'ביטול פעולה');
+  String get kg => pick('kg', 'ק״ג');
+  String get account => pick('Account', 'חשבון');
+  String get off => pick('Off', 'כבוי');
+  String get tagline =>
+      pick('Calories and fasting, simply.', 'קלוריות וצום, בפשטות.');
+  String stepOf(int n) => pick('Step $n of 2', 'שלב $n מתוך 2');
+  String get goalAutoHint => pick(
+    'Filled in once the fields above are set',
+    'יתמלא אחרי שתמלאו את השדות למעלה',
+  );
+  String get fastingQuestionHint => pick(
+    'You can change this any time in Settings.',
+    'אפשר לשנות את זה בכל עת בהגדרות.',
+  );
+
+  /// Sunday-first short weekday names.
+  List<String> get weekdaysShort => he
+      ? const ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
+      : const ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  List<String> get monthsShort => he
+      ? const ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳']
+      : const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  /// "Sun, 8 Nov" for a YYYY-MM-DD day.
+  String dayLabel(String day) {
+    final date = DateTime.parse('${day}T12:00:00Z');
+    return '${weekdaysShort[date.weekday % 7]}, ${date.day} ${monthsShort[date.month - 1]}';
+  }
+
+  /// "2 – 8 Nov" (or "30 Nov – 6 Dec") for a Sunday-based week.
+  String weekRange(String sunday) {
+    final start = DateTime.parse('${sunday}T12:00:00Z');
+    final end = start.add(const Duration(days: 6));
+    if (start.month == end.month) {
+      return '${start.day}–${end.day} ${monthsShort[end.month - 1]}';
+    }
+    return '${start.day} ${monthsShort[start.month - 1]} – ${end.day} ${monthsShort[end.month - 1]}';
+  }
+  String removedEntry(String name) => pick('Removed $name', '$name הוסר');
   String get log => pick('Log', 'רישום');
   String get menu => pick('Menu', 'תפריט');
   String get amount => pick('Amount', 'כמות');
@@ -170,6 +214,15 @@ class Copy {
 
   String get delete => pick('Remove', 'הסרה');
   String get success => pick('Goal met', 'היעד הושג');
+  String get onTrack => pick('On track', 'בדרך ליעד');
+
+  /// Label for the API's day status; "met" only once the day is over.
+  String dayStatus(String? status) => switch (status) {
+    'met' => success,
+    'over' => missed,
+    'on_track' => onTrack,
+    _ => estimate,
+  };
   String get missed => pick('Over goal', 'מעל היעד');
   String get notYet => pick('Not counted yet', 'עדיין לא נספר');
   String get calorieIntake => pick('Calorie intake', 'צריכת קלוריות');
@@ -185,6 +238,8 @@ class Copy {
   String get autoPublish =>
       pick('Publish new foods by default', 'פרסום מזונות חדשים כברירת מחדל');
   String get fasting => pick('Intermittent fasting', 'צום לסירוגין');
+  String get fastingTab => pick('Fasting', 'צום');
+  String get moreDetails => pick('More details', 'פרטים נוספים');
   String get scheduled => pick('Scheduled', 'מתוזמן');
   String get startFast => pick('Start fast', 'התחל צום');
   String get stopFast => pick('Stop fast', 'עצור צום');

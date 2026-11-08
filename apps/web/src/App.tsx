@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   api,
   ApiError,
   type AppleHealthState,
+  type DayEntry,
   type DayResponse,
+  type DayStatus,
   type FastingSession,
   type FastingState,
   type FastNotification,
@@ -23,7 +25,7 @@ import {
   type WeightPoint,
 } from "./api";
 import { fetchAppleConfig, signInWithApple, type AppleConfig } from "./apple";
-import { addDays, formatJerusalem, formatJerusalemDay, formatJerusalemTime, hourLabel, jerusalemParts } from "./clock";
+import { addDays, formatDayLabel, formatJerusalem, formatJerusalemDay, formatJerusalemTime, formatWeekday, formatWeekRange, hourLabel, jerusalemParts, todayJerusalemDay } from "./clock";
 import { THEME_MODES, useI18n, useTheme, type Copy, type Lang, type ThemeMode } from "./i18n";
 import {
   ageFromDob,
@@ -63,23 +65,11 @@ export function App() {
 function Shell({ me, setMe }: { me: Me; setMe: (me: Me | null) => void }) {
   const { t } = useI18n();
   const location = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [reminderVersion, setReminderVersion] = useState(0);
   const [notice, setNotice] = useState("");
-  function closeMenu() {
-    setMenuOpen(false);
-  }
   function bumpReminders() {
     setReminderVersion((value) => value + 1);
   }
-  useEffect(() => {
-    if (!menuOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [menuOpen]);
   useEffect(() => {
     if (!notice) return;
     const id = window.setTimeout(() => setNotice(""), 8000);
@@ -120,50 +110,64 @@ function Shell({ me, setMe }: { me: Me; setMe: (me: Me | null) => void }) {
     return <Navigate to="/setup/fasting" />;
   }
   const canVerifyFoods = me.user.isAdmin || me.permissions.includes("foods:verify");
-  const menuLayer = createPortal(
-    <>
-      <div
-        className={menuOpen ? "menu-backdrop visible" : "menu-backdrop"}
-        aria-hidden={!menuOpen}
-        onClick={closeMenu}
-      />
-      <aside className={menuOpen ? "menu-drawer open" : "menu-drawer"} inert={!menuOpen} aria-hidden={!menuOpen}>
-        <nav className="nav-panel">
-          <NavLink to="/" end onClick={closeMenu}>{t.today}</NavLink>
-          <NavLink to="/week" onClick={closeMenu}>{t.week}</NavLink>
-          <NavLink to="/weight" onClick={closeMenu}>{t.weight}</NavLink>
-          <NavLink to="/fasting" onClick={closeMenu}>{t.fasting}</NavLink>
-          <NavLink to="/settings" onClick={closeMenu}>{t.settings}</NavLink>
-          {me.user.isAdmin && <NavLink to="/permissions" onClick={closeMenu}>{t.permissions}</NavLink>}
-          <button type="button" onClick={async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); setStoredToken(null); setMe(null); }}>{t.logout}</button>
-        </nav>
-      </aside>
-    </>,
-    document.body,
-  );
+  // New page starts at the top (otherwise the old scroll position carries over).
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
+  async function logout() {
+    await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+    setStoredToken(null);
+    setMe(null);
+  }
   return (
-    <div className="shell">
+    <>
       <header className="topbar">
-        <strong>{t.appName}</strong>
-        <button className="icon" type="button" aria-label={t.menu} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
-          <span /><span /><span />
-        </button>
+        <div className="topbar-inner">
+          <strong>{t.appName}</strong>
+          <TabNav className="tabs-top" />
+        </div>
       </header>
-      {menuLayer}
+      <div className="shell">
       <div key={location.pathname} className="page">
         {notice && <p className="rise">{notice}</p>}
         <Routes location={location}>
-          <Route path="/" element={<Today canVerifyFoods={canVerifyFoods} />} />
+          <Route path="/" element={<Today canVerifyFoods={canVerifyFoods} onFastingChange={bumpReminders} />} />
           <Route path="/week" element={<WeekPage />} />
           <Route path="/weight" element={<WeightPage />} />
           <Route path="/fasting" element={<FastingPage onFastingChange={bumpReminders} />} />
-          <Route path="/settings" element={<SettingsPage me={me} setMe={setMe} onFastingChange={bumpReminders} />} />
+          <Route path="/settings/:section?" element={<SettingsPage me={me} setMe={setMe} onFastingChange={bumpReminders} onLogout={logout} />} />
           <Route path="/permissions" element={me.user.isAdmin ? <PermissionsPage /> : <Navigate to="/" />} />
           <Route path="/foods/new" element={<FoodForm />} />
           <Route path="/foods/:id" element={<FoodForm />} />
         </Routes>
       </div>
-    </div>
+      </div>
+      <TabNav className="tabbar" />
+    </>
+  );
+}
+
+/** Top-level destinations (HIG tab bar): bottom on phones, in the top bar on wide screens. */
+function TabNav({ className }: { className: string }) {
+  const { t } = useI18n();
+  const tabs: { to: string; label: string; icon: ReactNode; end?: boolean }[] = [
+    { to: "/", label: t.today, end: true, icon: <><circle cx="12" cy="12" r="8" opacity="0.35" /><path d="M12 4a8 8 0 0 1 7.6 10.5" /></> },
+    { to: "/week", label: t.week, icon: <path d="M5 20V12M10 20V6M15 20v-9M20 20V9" /> },
+    { to: "/fasting", label: t.fastingTab, icon: <><circle cx="12" cy="13" r="7.5" /><path d="M12 9.5V13l2.5 1.5M10 3h4" /></> },
+    { to: "/weight", label: t.weight, icon: <><rect x="4" y="4" width="16" height="16" rx="4" /><path d="M9 10a3 3 0 0 1 6 0M12 10l1.5-1.5" /></> },
+    { to: "/settings", label: t.settings, icon: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" /></> },
+  ];
+  return (
+    <nav className={className} aria-label={t.menu}>
+      {tabs.map((tab) => (
+        <NavLink key={tab.to} to={tab.to} end={tab.end}>
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            {tab.icon}
+          </svg>
+          <span>{tab.label}</span>
+        </NavLink>
+      ))}
+    </nav>
   );
 }
 
@@ -186,7 +190,7 @@ function checkSignupPassword(password: string, confirmPassword: string) {
 }
 
 function AuthPage({ mode, onAuth }: { mode: "login" | "signup"; onAuth: (me: Me) => void }) {
-  const { t, lang } = useI18n();
+  const { t, lang, setLang } = useI18n();
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -253,8 +257,13 @@ function AuthPage({ mode, onAuth }: { mode: "login" | "signup"; onAuth: (me: Me)
     }
   }
   return (
-    <main className="shell page">
-      <form className="card" onSubmit={submit}>
+    <main className="shell page auth-page">
+      <div className="auth-brand">
+        <AppMark />
+        <strong>{t.appName}</strong>
+        <span className="muted">{t.tagline}</span>
+      </div>
+      <Form className="card auth-card" onSubmit={submit}>
         <h1>{mode === "login" ? t.login : t.signup}</h1>
         {apple?.enabled && (
           <>
@@ -309,10 +318,27 @@ function AuthPage({ mode, onAuth }: { mode: "login" | "signup"; onAuth: (me: Me)
           </>
         )}
         {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={mode === "signup" && !checks.valid}>{mode === "login" ? t.login : t.signup}</button>
+        <button type="submit">{mode === "login" ? t.login : t.signup}</button>
         <p>{mode === "login" ? <Link to="/signup">{t.needAccount}</Link> : <Link to="/login">{t.haveAccount}</Link>}</p>
-      </form>
+      </Form>
+      <div className="segmented auth-lang" role="group" aria-label={t.language}>
+        {(["en", "he"] as const).map((option) => (
+          <button key={option} type="button" lang={option} aria-pressed={lang === option} onClick={() => setLang(option)}>
+            {option === "en" ? "English" : "עברית"}
+          </button>
+        ))}
+      </div>
     </main>
+  );
+}
+
+/** App mark: a drop with a ring segment, drawn with the accent token. */
+function AppMark() {
+  return (
+    <svg className="app-mark" viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">
+      <rect width="48" height="48" rx="12" fill="var(--accent-primary)" />
+      <path d="M24 10c5.5 7 9 11.6 9 16.2A9 9 0 0 1 15 26.2C15 21.6 18.5 17 24 10Z" fill="var(--fast-on)" />
+    </svg>
   );
 }
 
@@ -342,11 +368,13 @@ function FastingSetup({ onDone }: { onDone: () => void }) {
   }
   return (
     <main className="shell page">
-      <form className="card" onSubmit={save}>
+      <Form className="card" onSubmit={save}>
+        <p className="step-label">{t.stepOf.replace("{n}", "1")}</p>
         <h1>{t.fastingQuestion}</h1>
-        <div className="row">
-          <button type="button" className={wants === true ? "" : "secondary"} onClick={() => setWants(true)}>{t.yes}</button>
-          <button type="button" className={wants === false ? "" : "secondary"} onClick={() => setWants(false)}>{t.no}</button>
+        <p className="muted">{t.fastingQuestionHint}</p>
+        <div className="segmented segmented-lg" role="radiogroup" aria-label={t.fastingQuestion}>
+          <button type="button" role="radio" aria-checked={wants === true} aria-pressed={wants === true} onClick={() => setWants(true)}>{t.yes}</button>
+          <button type="button" role="radio" aria-checked={wants === false} aria-pressed={wants === false} onClick={() => setWants(false)}>{t.no}</button>
         </div>
         <div className={wants ? "reveal open" : "reveal"} inert={!wants}>
           <div className="reveal-inner">
@@ -366,7 +394,7 @@ function FastingSetup({ onDone }: { onDone: () => void }) {
         </div>
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={wants == null}>{t.continue}</button>
-      </form>
+      </Form>
     </main>
   );
 }
@@ -379,6 +407,10 @@ function ProfileSetup({ onDone }: { onDone: (me: Me) => void }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const dateOfBirth = String(form.get("dateOfBirth") ?? "");
+    if (!form.get("sex")) {
+      setError(t.chooseSex);
+      return;
+    }
     if (!dateOfBirth) {
       setError(t.chooseDate);
       return;
@@ -407,49 +439,151 @@ function ProfileSetup({ onDone }: { onDone: (me: Me) => void }) {
   }
   return (
     <main className="shell page">
-      <form className="card" onSubmit={save}>
+      <Form className="card" onSubmit={save}>
+        <p className="step-label">{t.stepOf.replace("{n}", "2")}</p>
         <h1>{t.profileTitle}</h1>
         <ProfileFields />
         {error && <p className="error">{error}</p>}
         <button type="submit">{t.save}</button>
-      </form>
+      </Form>
     </main>
   );
 }
 
-function Today({ canVerifyFoods }: { canVerifyFoods: boolean }) {
+const MEAL_COLOR: Record<MealCategory, string> = {
+  breakfast: "var(--accent-primary)",
+  lunch: "var(--accent-energy)",
+  dinner: "var(--accent-success)",
+  snacks: "var(--label-secondary)",
+};
+
+function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; onFastingChange: () => void }) {
   const { t } = useI18n();
-  const [day, setDay] = useState<DayResponse | null>(null);
+  const [loadedDay, setDay] = useState<DayResponse | null>(null);
+  // Removed entry waiting out its Undo window; deleted on the server afterwards.
+  const [pendingRemoval, setPendingRemoval] = useState<DayEntry | null>(null);
+  const removalTimer = useRef<number | null>(null);
+  const [fasting, setFasting] = useState<FastingState | null>(null);
+  const [now, setNow] = useState(Date.now());
   const [loggingMeal, setLoggingMeal] = useState<MealCategory | null>(null);
-  const [barcode, setBarcode] = useState("");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Food[] | null>(null);
+  const [recent, setRecent] = useState<RecentFood[]>([]);
   const [lookup, setLookup] = useState<{ status: string; food: Food | null; foods: Food[] } | null>(null);
   const [picked, setPicked] = useState<Food | null>(null);
   const [amount, setAmount] = useState("100");
   const [error, setError] = useState("");
+  const [params, setParams] = useSearchParams();
+  const searchInput = useRef<HTMLInputElement>(null);
+  const scrollToPicked = useRef(false);
+  const trimmedQuery = query.trim();
+  const barcodeQuery = /^\d{6,}$/.test(trimmedQuery);
 
   async function reload() {
-    setDay(await api<DayResponse>("/api/days/today"));
+    const nextDay = await api<DayResponse>("/api/days/today");
+    setDay(nextDay);
+    try {
+      setFasting(await api<FastingState>("/api/fasting"));
+    } catch (err) {
+      setError(message(t, err));
+    }
   }
 
   useEffect(() => {
     reload().catch((err) => setError(message(t, err)));
   }, [t]);
 
+  useEffect(() => {
+    if (!fasting?.running) return;
+    const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(tick);
+  }, [fasting?.running]);
+
+  async function toggleFast() {
+    if (!fasting?.enabled) return;
+    try {
+      const next = await api<FastingState>(fasting.running ? "/api/fasting/stop" : "/api/fasting/start", { method: "POST" });
+      setFasting(next);
+      setError("");
+      onFastingChange();
+    } catch (err) {
+      setError(message(t, err));
+    }
+  }
+
+  function loadRecent() {
+    api<{ foods: RecentFood[] }>("/api/foods/recent").then((result) => setRecent(result.foods)).catch(() => {});
+  }
+
+  // Coming back from "New food" / "Edit": reopen that meal with the food picked.
+  useEffect(() => {
+    const meal = params.get("meal");
+    const foodId = params.get("food");
+    if (!meal || !foodId || !(MEALS as readonly string[]).includes(meal)) return;
+    setParams({}, { replace: true });
+    api<{ food: Food }>(`/api/foods/${encodeURIComponent(foodId)}`)
+      .then((result) => {
+        scrollToPicked.current = true;
+        setLoggingMeal(meal as MealCategory);
+        setPicked(result.food);
+        setAmount("100");
+        loadRecent();
+      })
+      .catch((err) => setError(message(t, err)));
+  }, [params, setParams, t]);
+
+  useEffect(() => {
+    if (!loggingMeal || trimmedQuery.length < 2) {
+      setResults(null);
+      return;
+    }
+    let active = true;
+    const id = window.setTimeout(() => {
+      api<{ foods: Food[] }>(`/api/foods/search?q=${encodeURIComponent(trimmedQuery)}`)
+        .then((result) => active && setResults(result.foods))
+        .catch((err) => active && setError(message(t, err)));
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(id);
+    };
+  }, [loggingMeal, trimmedQuery, t]);
+
   function openLog(meal: MealCategory) {
-    setLoggingMeal((current) => (current === meal ? null : meal));
-    setBarcode("");
+    const opening = loggingMeal !== meal;
+    setLoggingMeal(opening ? meal : null);
+    setQuery("");
+    setResults(null);
     setLookup(null);
     setPicked(null);
     setAmount("100");
+    setError("");
+    if (opening) {
+      loadRecent();
+      window.setTimeout(() => searchInput.current?.focus({ preventScroll: true }), 50);
+    }
+  }
+
+  function pick(food: Food, lastAmount?: number) {
+    setPicked(food);
+    setAmount(String(lastAmount ?? 100));
     setError("");
   }
 
   async function findFood(event: FormEvent) {
     event.preventDefault();
     setError("");
-    const result = await api<{ status: string; food: Food | null; foods: Food[] }>(`/api/foods/barcode/${encodeURIComponent(barcode.trim())}`);
-    setLookup(result);
-    setPicked(result.food);
+    if (!barcodeQuery) {
+      if (results?.length === 1) pick(results[0]);
+      return;
+    }
+    try {
+      const result = await api<{ status: string; food: Food | null; foods: Food[] }>(`/api/foods/barcode/${encodeURIComponent(trimmedQuery)}`);
+      setLookup(result);
+      if (result.food) pick(result.food);
+    } catch (err) {
+      setError(message(t, err));
+    }
   }
 
   async function addFood(event: FormEvent) {
@@ -458,24 +592,75 @@ function Today({ canVerifyFoods }: { canVerifyFoods: boolean }) {
     try {
       await api(`/api/days/today/entries`, {
         method: "POST",
-        body: JSON.stringify({ foodId: picked.id, amount: Number(amount), meal: loggingMeal }),
+        body: JSON.stringify({ foodId: picked.id, amount: Number(amount.replace(",", ".")), meal: loggingMeal }),
       });
       setLoggingMeal(null);
       setLookup(null);
       setPicked(null);
+      setQuery("");
       await reload();
     } catch (err) {
       setError(message(t, err));
     }
   }
 
-  async function remove(id: string) {
-    await api(`/api/days/today/entries/${id}`, { method: "DELETE" });
-    await reload();
+  function newFoodLink(meal: MealCategory) {
+    const search = new URLSearchParams({ meal });
+    if (barcodeQuery) search.set("barcode", trimmedQuery);
+    else if (trimmedQuery) search.set("name", trimmedQuery);
+    return `/foods/new?${search}`;
   }
+
+  async function commitRemoval(entry: DayEntry) {
+    if (removalTimer.current != null) window.clearTimeout(removalTimer.current);
+    removalTimer.current = null;
+    try {
+      await api(`/api/days/today/entries/${entry.id}`, { method: "DELETE" });
+      await reload();
+    } catch (err) {
+      setError(message(t, err));
+    } finally {
+      setPendingRemoval((current) => (current?.id === entry.id ? null : current));
+    }
+  }
+
+  function remove(entry: DayEntry) {
+    // Only one Undo at a time: an earlier removal is committed now.
+    if (pendingRemoval) void commitRemoval(pendingRemoval);
+    setPendingRemoval(entry);
+    removalTimer.current = window.setTimeout(() => void commitRemoval(entry), 6000);
+  }
+
+  function undoRemoval() {
+    if (removalTimer.current != null) window.clearTimeout(removalTimer.current);
+    removalTimer.current = null;
+    setPendingRemoval(null);
+  }
+
+  // Leaving the page commits a pending removal instead of dropping it.
+  const pendingRef = useRef<DayEntry | null>(null);
+  pendingRef.current = pendingRemoval;
+  useEffect(() => () => {
+    const entry = pendingRef.current;
+    if (removalTimer.current != null) window.clearTimeout(removalTimer.current);
+    if (entry) void api(`/api/days/today/entries/${entry.id}`, { method: "DELETE" }).catch(() => {});
+  }, []);
+
+  const day: DayResponse | null = loadedDay && pendingRemoval
+    ? {
+        ...loadedDay,
+        entries: loadedDay.entries.filter((entry) => entry.id !== pendingRemoval.id),
+        totals: { ...loadedDay.totals, calories: Math.max(0, loadedDay.totals.calories - pendingRemoval.calories) },
+      }
+    : loadedDay;
 
   const remaining = day ? day.goalKcal - day.totals.calories : 0;
   const over = day ? day.totals.calories > day.goalKcal : false;
+  const slices = MEALS.map((meal) => ({
+    meal,
+    color: MEAL_COLOR[meal],
+    calories: day?.entries.filter((entry) => entry.meal === meal).reduce((sum, entry) => sum + entry.calories, 0) ?? 0,
+  }));
 
   return (
     <>
@@ -484,33 +669,36 @@ function Today({ canVerifyFoods }: { canVerifyFoods: boolean }) {
           <h1>{t.today}</h1>
           <div className="today-hero">
             <div className="ring-wrap">
-              <CalorieRing eaten={day.totals.calories} goal={day.goalKcal} over={over} />
-              <div className="ring-center">
-                <b><AnimatedNumber value={remaining} from={day.goalKcal} /></b>
-                <span>{t.remaining}</span>
+              <div className="ring-shift">
+                <CalorieRing slices={slices} goal={day.goalKcal} over={over} />
+              </div>
+              <div className="ring-center" role="img" aria-label={`${formatKcal(Math.abs(remaining))} ${t.kcal} ${over ? t.missed : t.remaining}`}>
+                <b className={over ? "over" : undefined} aria-hidden="true"><AnimatedNumber value={remaining} from={day.goalKcal} /></b>
+                <span aria-hidden="true">{t.remaining}</span>
               </div>
             </div>
             <div className="hero-side">
-              {day.healthAdjusted && (
-                <>
-                  <div className="pair"><span>{t.healthBaseGoal}</span><b>{day.baseGoalKcal} {t.kcal}</b></div>
-                  <div className="pair"><span>{t.healthActiveKcal}</span><b>+{day.activeKcal} {t.kcal}</b></div>
-                </>
-              )}
-              <div className="pair"><span>{t.goal}</span><b>{day.goalKcal} {t.kcal}</b></div>
-              <div className="pair"><span>{t.eaten}</span><b>{day.totals.calories} {t.kcal}</b></div>
-              <p className="muted">{over ? t.missed : day.success ? t.success : day.healthAdjusted ? t.healthEstimate : t.estimate}</p>
+              <div className="pair"><span>{t.goal}</span><b>{formatKcal(day.goalKcal)} {t.kcal}</b></div>
+              <div className="pair"><span>{t.eaten}</span><b>{formatKcal(day.totals.calories)} {t.kcal}</b></div>
+              <p className="muted">{dayStatusLabel(t, day.status)}</p>
             </div>
           </div>
+          {day.healthSynced && (
+            <div className="today-health">
+              <ProgressRow label={t.healthSteps} value={day.steps} goal={day.stepGoal} unit="" />
+              <ProgressRow label={t.healthExercise} value={day.exerciseMinutes} goal={day.exerciseGoalMinutes} unit={t.healthMinutes} />
+            </div>
+          )}
+          {slices.some((slice) => slice.calories > 0) && (
+            <div className="meal-legend">
+              {slices.filter((slice) => slice.calories > 0).map((slice) => (
+                <span key={slice.meal}><i className="meal-swatch" style={{ background: slice.color }} />{mealLabel(t, slice.meal)}</span>
+              ))}
+            </div>
+          )}
         </section>
       )}
-      {day && day.healthSynced && (
-        <section className="card health-card">
-          <h2>{t.appleHealth}</h2>
-          <ProgressRow label={t.healthSteps} value={day.steps} goal={day.stepGoal} unit="" />
-          <ProgressRow label={t.healthExercise} value={day.exerciseMinutes} goal={day.exerciseGoalMinutes} unit={t.healthMinutes} />
-        </section>
-      )}
+      {fasting && <TodayFast fasting={fasting} now={now} onToggle={toggleFast} />}
       {error && !loggingMeal && <p className="error">{error}</p>}
       {MEALS.map((meal) => {
         const mealEntries = day?.entries.filter((entry) => entry.meal === meal) ?? [];
@@ -520,7 +708,7 @@ function Today({ canVerifyFoods }: { canVerifyFoods: boolean }) {
           <section className="card meal-card" key={meal}>
             <div className="meal-head">
               <h2>{mealLabel(t, meal)}</h2>
-              <span className="meal-total">{mealKcal} {t.kcal}</span>
+              <span className={mealKcal > 0 ? "meal-total" : "meal-total zero"}>{formatKcal(mealKcal)} {t.kcal}</span>
             </div>
             {mealEntries.length === 0 && <p className="muted meal-empty">{t.emptyMeal}</p>}
             {mealEntries.map((entry) => (
@@ -530,43 +718,85 @@ function Today({ canVerifyFoods }: { canVerifyFoods: boolean }) {
                   <div className="muted">{entry.amount} {entry.basis === "solid" ? t.grams : t.milliliters}</div>
                 </div>
                 <div>
-                  <span className="kcal">{entry.calories}</span>
-                  <button className="quiet" type="button" onClick={() => remove(entry.id)}>{t.delete}</button>
+                  <span className="kcal">{formatKcal(entry.calories)}</span>
+                  <button className="quiet" type="button" onClick={() => remove(entry)}>{t.delete}</button>
                 </div>
               </div>
             ))}
             <button type="button" className={logging ? "secondary meal-log" : "meal-log"} onClick={() => openLog(meal)}>
-              {t.log}
+              {logging ? t.cancel : t.log}
             </button>
-            <div className={logging ? "reveal open" : "reveal"} inert={!logging}>
+            <div className={logging && !picked ? "reveal open" : "reveal"} inert={!logging || Boolean(picked)}>
               <div className="reveal-inner">
-                <form onSubmit={findFood} className="food-add">
-                  <label><span>{t.barcode}</span><input value={barcode} onChange={(event) => setBarcode(event.target.value)} required /></label>
-                  <button type="submit">{t.lookUp}</button>
-                </form>
+                <Form onSubmit={findFood} className="food-add" role="search">
+                  <input
+                    ref={logging ? searchInput : undefined}
+                    type="search"
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setLookup(null);
+                    }}
+                    placeholder={t.searchFoods}
+                    aria-label={t.searchFoods}
+                    enterKeyHint="search"
+                  />
+                  {barcodeQuery && <button type="submit">{t.lookUp}</button>}
+                </Form>
+                {trimmedQuery.length < 2 && recent.length > 0 && (
+                  <div className="food-list">
+                    <h3 className="label">{t.recentFoods}</h3>
+                    {recent.map((food) => (
+                      <FoodRow key={food.id} food={food} detail={`${food.lastAmount} ${unitLabel(t, food)}`} onPick={() => pick(food, food.lastAmount)} />
+                    ))}
+                  </div>
+                )}
+                {results && results.length > 0 && !lookup && (
+                  <div className="food-list">
+                    {results.map((food) => (
+                      <FoodRow key={food.id} food={food} onPick={() => pick(food)} />
+                    ))}
+                  </div>
+                )}
+                {results && results.length === 0 && !lookup && (
+                  <p className="muted">{t.noMatches} <Link to={newFoodLink(meal)}>{t.createFood}</Link></p>
+                )}
+                {lookup?.status === "none" && (
+                  <p>{t.noFood} <Link to={newFoodLink(meal)}>{t.createFood}</Link></p>
+                )}
+                {lookup?.status === "list" && (
+                  <div className="food-list">
+                    <h3 className="label">{t.chooseFood}</h3>
+                    {lookup.foods.map((food) => (
+                      <FoodRow key={food.id} food={food} onPick={() => pick(food)} />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-            {logging && lookup?.status === "none" && (
-              <p className="rise">{t.noFood} <Link to={`/foods/new?barcode=${encodeURIComponent(barcode)}`}>{t.createFood}</Link></p>
-            )}
-            {logging && lookup?.status === "list" && (
-              <div className="rise">
-                <h3>{t.chooseFood}</h3>
-                {lookup.foods.map((food) => (
-                  <button key={food.id} type="button" className="secondary choice" onClick={() => setPicked(food)}>{food.name}{food.verified ? ` · ${t.verified}` : ""}</button>
-                ))}
-              </div>
-            )}
             {logging && picked && (
-              <form className="rise" onSubmit={addFood}>
-                <p><strong>{picked.name}</strong> · {picked.owned ? t.personal : ""} {picked.verified ? t.verified : ""}</p>
-                <p className="muted">{picked.calories} {t.kcal} / 100 {picked.basis === "solid" ? t.grams : t.milliliters}</p>
-                <label><span>{t.amount} ({picked.basis === "solid" ? t.grams : t.milliliters})</span>
-                  <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" required />
+              <Form
+                className="rise"
+                onSubmit={addFood}
+                ref={(node) => {
+                  if (node && scrollToPicked.current) {
+                    scrollToPicked.current = false;
+                    node.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+                  }
+                }}
+              >
+                <p><strong>{picked.name}</strong>{picked.owned ? ` · ${t.personal}` : ""}{picked.verified ? ` · ${t.verified}` : ""}</p>
+                <p className="muted">{picked.calories} {t.kcal} / 100 {unitLabel(t, picked)}</p>
+                <label><span>{t.amount} ({unitLabel(t, picked)})</span>
+                  <div className="amount-field">
+                    <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" required autoFocus onFocus={(event) => event.currentTarget.select()} />
+                    <output className="kcal" aria-live="polite">= {portionKcal(picked, amount)} {t.kcal}</output>
+                  </div>
                 </label>
                 <div className="fast-actions">
                   <button type="submit">{t.add}</button>
-                  <Link className="secondary" to={`/foods/${picked.id}`}>{t.edit}</Link>
+                  <button type="button" className="secondary" onClick={() => setPicked(null)}>{t.back}</button>
+                  <Link className="secondary" to={`/foods/${picked.id}?meal=${meal}`}>{t.edit}</Link>
                   {canVerifyFoods && picked.published && !picked.verified && (
                     <button type="button" className="secondary" onClick={async () => {
                       const result = await api<{ food: Food }>(`/api/foods/${picked.id}/verify`, { method: "POST" });
@@ -574,14 +804,59 @@ function Today({ canVerifyFoods }: { canVerifyFoods: boolean }) {
                     }}>{t.verify}</button>
                   )}
                 </div>
-              </form>
+              </Form>
             )}
             {logging && error && <p className="error">{error}</p>}
           </section>
         );
       })}
+      {pendingRemoval && createPortal(
+        // Portal: the animated .page has a transform, which would trap position: fixed.
+        <div className="toast rise" role="status">
+          <span>{t.removedEntry.replace("{name}", pendingRemoval.name)}</span>
+          <button type="button" className="toast-action" onClick={undoRemoval}>{t.undo}</button>
+        </div>,
+        document.body,
+      )}
     </>
   );
+}
+
+type RecentFood = Food & { lastAmount: number };
+
+function unitLabel(t: Copy, food: Pick<Food, "basis">) {
+  return food.basis === "solid" ? t.grams : t.milliliters;
+}
+
+function portionKcal(food: Pick<Food, "calories">, amount: string) {
+  const value = Number(amount.trim().replace(",", "."));
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.round((food.calories * value) / 100);
+}
+
+function FoodRow({ food, detail, onPick }: { food: Food; detail?: string; onPick: () => void }) {
+  const { t } = useI18n();
+  return (
+    <button type="button" className="food-row" onClick={onPick}>
+      <span className="food-row-name">
+        <strong>{food.name}</strong>
+        <span className="muted">
+          {detail ?? `${food.calories} ${t.kcal} / 100 ${unitLabel(t, food)}`}
+          {food.verified ? ` · ${t.verified}` : ""}
+        </span>
+      </span>
+      <span className="food-row-add" aria-hidden="true">+</span>
+    </button>
+  );
+}
+
+function dayStatusLabel(t: Copy, status: DayStatus) {
+  switch (status) {
+    case "met": return t.success;
+    case "over": return t.missed;
+    case "on_track": return t.onTrack;
+    default: return t.estimate;
+  }
 }
 
 function themeLabel(t: Copy, mode: ThemeMode) {
@@ -629,6 +904,8 @@ function FastingPage({ onFastingChange }: { onFastingChange: () => void }) {
   }
 
   const left = fasting?.running && fasting.endsAt ? Math.max(0, new Date(fasting.endsAt).getTime() - now) : 0;
+  const totalMs = ((fasting?.lengthHoursRunning ?? fasting?.lengthHours) || 0) * 60 * 60 * 1000;
+  const fastRatio = totalMs > 0 ? (totalMs - left) / totalMs : 0;
   const sessions = fasting?.sessions ?? [];
 
   return (
@@ -639,16 +916,19 @@ function FastingPage({ onFastingChange }: { onFastingChange: () => void }) {
           <div className="fast-hero">
             {fasting.running && fasting.endsAt && (
               <>
-                <p className="fast-count rise">{formatDuration(left)}</p>
+                <div className="fast-ring-hero">
+                  <FastRing ratio={fastRatio} color="var(--fast-on)" />
+                  <p className="fast-count rise">{formatDuration(left)}</p>
+                </div>
                 <p className="muted">{t.approximateEnd}: {formatJerusalemTime(fasting.endsAt)}</p>
               </>
             )}
             {!fasting.running && (
-              <p className="muted">{t.scheduled}: {hourLabel(fasting.startHour)} – {hourLabel(fasting.endHour)} · {fasting.lengthHours} {t.hours}</p>
+              <p className="muted">{t.scheduled}: <span className="scheduled">{hourLabel(fasting.startHour)} – {hourLabel(fasting.endHour)}</span> · <span className="scheduled">{fasting.lengthHours} {t.hours}</span></p>
             )}
             <button className="fast-go" type="button" onClick={toggle}>{fasting.running ? t.stopFast : t.startFast}</button>
           </div>
-        ) : fasting && <p className="muted">{t.fasting_disabled} <Link to="/settings">{t.settings}</Link></p>}
+        ) : fasting && <p className="muted">{t.fasting_disabled} <Link to="/settings/fasting">{t.settings}</Link></p>}
         {error && <p className="error">{error}</p>}
       </section>
       <section className="card">
@@ -700,32 +980,106 @@ function fastEndLabel(session: FastingSession, approximate: string): string {
   return session.running ? `${label} ${approximate}` : label;
 }
 
-function CalorieRing({ eaten, goal, over }: { eaten: number; goal: number; over: boolean }) {
+function CalorieRing({ slices, goal, over }: { slices: { color: string; calories: number }[]; goal: number; over: boolean }) {
   const radius = 52;
   const circumference = 2 * Math.PI * radius;
-  const ratio = goal > 0 ? Math.min(eaten / goal, 1) : 0;
+  const eaten = slices.reduce((sum, slice) => sum + slice.calories, 0);
+  const basis = over && eaten > 0 ? eaten : goal;
+  const parts = basis > 0 ? slices.filter((slice) => slice.calories > 0) : [];
   const reduce = prefersReducedMotion();
-  const [progress, setProgress] = useState(reduce ? ratio : 0);
+  const [progress, setProgress] = useState(reduce ? 1 : 0);
   useEffect(() => {
     if (reduce) {
-      setProgress(ratio);
+      setProgress(1);
       return;
     }
-    const frame = requestAnimationFrame(() => setProgress(ratio));
+    setProgress(0);
+    const frame = requestAnimationFrame(() => setProgress(1));
     return () => cancelAnimationFrame(frame);
-  }, [ratio, reduce]);
+  }, [eaten, goal, over, reduce]);
+  const gap = parts.length > 1 ? 8 : 0;
+  let cursor = 0;
+  const arcs = parts.map((slice) => {
+    const full = (slice.calories / basis) * circumference * progress;
+    const separated = full > gap + 2;
+    const length = separated ? full - gap : full;
+    const start = cursor + (separated ? gap / 2 : 0);
+    cursor += full;
+    return { color: slice.color, length, start };
+  });
   return (
     <svg className="ring" viewBox="0 0 120 120" aria-hidden="true">
       <circle className="ring-track" cx="60" cy="60" r={radius} />
-      <circle
-        className={over ? "ring-fill over" : "ring-fill"}
-        cx="60"
-        cy="60"
-        r={radius}
-        strokeDasharray={circumference}
-        style={{ strokeDashoffset: circumference * (1 - progress) }}
-      />
+      {arcs.map((arc) => (
+        <circle
+          key={arc.color}
+          className="ring-slice"
+          cx="60"
+          cy="60"
+          r={radius}
+          strokeDasharray={`${arc.length} ${circumference}`}
+          style={{ stroke: arc.color, strokeDashoffset: -arc.start }}
+        />
+      ))}
     </svg>
+  );
+}
+
+function FastRing({ ratio, color = "var(--accent-energy)" }: { ratio: number; color?: string }) {
+  const radius = 52;
+  const circumference = 2 * Math.PI * radius;
+  const clamped = Math.min(Math.max(ratio, 0), 1);
+  return (
+    <svg className="ring" viewBox="0 0 120 120" aria-hidden="true">
+      <circle className="ring-track" cx="60" cy="60" r={radius} />
+      {/* No arc at 0%: a round line cap would draw a stray dot. */}
+      {clamped > 0 && (
+        <circle
+          className="ring-slice"
+          cx="60"
+          cy="60"
+          r={radius}
+          strokeDasharray={`${circumference * clamped} ${circumference}`}
+          style={{ stroke: color, strokeDashoffset: 0 }}
+        />
+      )}
+    </svg>
+  );
+}
+
+function TodayFast({ fasting, now, onToggle }: { fasting: FastingState; now: number; onToggle: () => void }) {
+  const { t } = useI18n();
+  const running = Boolean(fasting.running && fasting.endsAt);
+  const totalMs = ((fasting.lengthHoursRunning ?? fasting.lengthHours) || 0) * 60 * 60 * 1000;
+  const left = running ? Math.max(0, new Date(fasting.endsAt!).getTime() - now) : 0;
+  const ratio = running && totalMs > 0 ? Math.min(1, Math.max(0, (totalMs - left) / totalMs)) : 0;
+  return (
+    <section className="card today-fast">
+      <div className="today-fast-main">
+        <div className="fast-mini">
+          <FastRing ratio={ratio} />
+        </div>
+        <div className="today-fast-copy">
+          <h2>{t.fasting}</h2>
+          {running && fasting.endsAt ? (
+            <>
+              <p className="today-fast-time">{formatDuration(left)}</p>
+              <p className="muted">{t.approximateEnd}: {formatJerusalemTime(fasting.endsAt)}</p>
+            </>
+          ) : fasting.enabled ? (
+            <p className="muted">{t.scheduled}: <span className="scheduled">{hourLabel(fasting.startHour)} – {hourLabel(fasting.endHour)}</span> · <span className="scheduled">{fasting.lengthHours} {t.hours}</span></p>
+          ) : (
+            <p className="muted">{t.fasting_disabled} <Link to="/settings/fasting">{t.settings}</Link></p>
+          )}
+        </div>
+      </div>
+      <div className="today-fast-actions">
+        {fasting.enabled && (
+          <button className={fasting.running ? "secondary" : "energy"} type="button" onClick={onToggle}>{fasting.running ? t.stopFast : t.startFast}</button>
+        )}
+        <Link className="secondary" to="/fasting">{t.moreDetails}</Link>
+      </div>
+    </section>
   );
 }
 
@@ -755,35 +1109,69 @@ function WeekPage() {
     api<WeekResponse>(`/api/weeks${query}`).then(setWeek).catch((err) => setError(message(t, err)));
   }, [on, t]);
   if (!week) return error ? <p className="error">{error}</p> : <p className="muted loading">…</p>;
+  const today = todayJerusalemDay();
+  const isCurrentWeek = addDays(week.sunday, 7) > today;
   const countedDays = week.days.filter((day) => !day.future && day.calories > 0);
+  const byDay = new Map(week.days.map((day) => [day.day, day]));
+  const dailyGoal = Math.round(week.goalKcal / 7);
+  const chartDays = Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(week.sunday, index);
+    const row = byDay.get(date);
+    return { date, calories: Math.round(row?.calories ?? 0), goal: row?.goalKcal ?? dailyGoal, status: row?.status ?? (date > today ? "future" : "empty") };
+  });
+  const scale = Math.max(dailyGoal * 1.25, ...chartDays.map((day) => day.calories), 1);
   return (
     <section className="card rise" key={week.sunday}>
-      <h1>{t.week}</h1>
-      <div className="row">
-        <button className="secondary" onClick={() => setParams({ on: addDays(week.sunday, -7) })}>{t.previousWeek}</button>
-        <button className="secondary" onClick={() => setParams({ on: addDays(week.sunday, 7) })}>{t.nextWeek}</button>
+      <div className="week-head">
+        <div>
+          <h1>{t.week}</h1>
+          <p className="muted week-range">{formatWeekRange(week.sunday)}</p>
+        </div>
+        <div className="week-nav">
+          <button type="button" className="secondary icon-button" aria-label={t.previousWeek} onClick={() => setParams({ on: addDays(week.sunday, -7) })}>
+            <Chevron back />
+          </button>
+          <button type="button" className="secondary icon-button" aria-label={t.nextWeek} disabled={isCurrentWeek} onClick={() => setParams({ on: addDays(week.sunday, 7) })}>
+            <Chevron />
+          </button>
+        </div>
+      </div>
+      <div className="week-chart" role="img" aria-label={chartDays.map((day) => `${formatWeekday(day.date)} ${day.calories} ${t.kcal}`).join(", ")}>
+        <i className="week-goal" style={{ bottom: `${(dailyGoal / scale) * 100}%` }} aria-hidden="true" />
+        {chartDays.map((day) => (
+          <div className={`week-bar ${day.status}${day.date === today ? " today" : ""}`} key={day.date}>
+            <div className="week-bar-track">
+              <i style={{ height: `${(day.calories / scale) * 100}%` }} />
+            </div>
+            <span>{formatWeekday(day.date)}</span>
+          </div>
+        ))}
       </div>
       <div className="stats">
-        <div className="stat"><span>{t.calorieIntake}</span><b>{week.calorieIntake} / {week.goalKcal}</b></div>
+        <div className="stat"><span>{t.calorieIntake}</span><b>{formatKcal(week.calorieIntake)}<small> / {formatKcal(week.goalKcal)}</small></b></div>
         <div className="stat"><span>{t.successCount}</span><b>{week.successCount}</b></div>
-        <div className="stat"><span>{t.weightChange}</span><b>{week.weightChangeKg == null ? "—" : week.weightChangeKg}</b></div>
+        <div className="stat"><span>{t.weightChange}</span><b>{week.weightChangeKg == null ? "—" : `${week.weightChangeKg > 0 ? "+" : ""}${week.weightChangeKg} ${t.kg}`}</b></div>
       </div>
       {week.weightChangeKg == null && <p className="muted">{t.noWeightChange}</p>}
       {countedDays.map((day) => (
         <div className="week-day" key={day.day}>
-          <span>{day.day}</span>
-          <span>{day.calories} / {day.goalKcal}</span>
-          <span>{day.success ? t.success : t.missed}</span>
+          <span>{formatDayLabel(day.day)}</span>
+          <span>{formatKcal(day.calories)} / {formatKcal(day.goalKcal)}</span>
+          <span className={`status-${day.status}`}>{dayStatusLabel(t, day.status)}</span>
           {day.steps != null && (
             <span className="week-day-health">
               {t.healthSteps} {day.steps.toLocaleString()} · {t.healthExercise} {day.exerciseMinutes ?? 0} {t.healthMinutes}
-              {day.activeKcal ? ` · ${t.healthActiveKcal} +${day.activeKcal} ${t.kcal}` : ""}
             </span>
           )}
         </div>
       ))}
     </section>
   );
+}
+
+/** Whole kcal with thousands separators (calories are stored with decimals). */
+function formatKcal(value: number): string {
+  return Math.round(value).toLocaleString(document.documentElement.lang === "he" ? "he-IL" : "en-US");
 }
 
 function WeightPage() {
@@ -817,13 +1205,13 @@ function WeightPage() {
   }
   return (
     <>
-      <form className="card" onSubmit={save}>
+      <Form className="card" onSubmit={save}>
         <h1>{t.weight}</h1>
         <label><span>{t.weightKg}</span><input name="weightKg" inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
         <label><span>{t.loggedAt}</span><input name="loggedAt" type="datetime-local" /></label>
         {error && <p className="error">{error}</p>}
         <button type="submit">{t.logWeight}</button>
-      </form>
+      </Form>
       <section className="card">
         {weights.length === 0 ? <p className="muted">{t.graphEmpty}</p> : <WeightGraph weights={weights} />}
         {weights.map((point) => (
@@ -865,8 +1253,10 @@ function WeightGraph({ weights }: { weights: WeightPoint[] }) {
   );
 }
 
-function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) => void; onFastingChange: () => void }) {
+function SettingsPage({ me, setMe, onFastingChange, onLogout }: { me: Me; setMe: (me: Me) => void; onFastingChange: () => void; onLogout: () => void }) {
   const { t, setLang } = useI18n();
+  const { section } = useParams();
+  const navigate = useNavigate();
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [fasting, setFasting] = useState<FastingState | null>(null);
@@ -910,6 +1300,7 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
       });
       setHealth(next);
       setError("");
+      navigate("/settings");
     } catch (err) {
       setError(message(t, err));
     }
@@ -939,6 +1330,7 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
       });
       setProfile(next.profile);
       setError("");
+      navigate("/settings");
     } catch (err) {
       setError(message(t, err));
     }
@@ -955,20 +1347,25 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
   async function saveFasting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const next = await api<FastingState>("/api/fasting", {
-      method: "PUT",
-      body: JSON.stringify({
-        enabled: fastingEnabledDraft,
-        lengthHours: Number(form.get("lengthHours")),
-        startHour: Number(form.get("startHour")),
-        reminderOffsets,
-      }),
-    });
-    setFasting(next);
-    setFastingEnabledDraft(next.enabled);
-    setReminderOffsets(next.reminderOffsets ?? []);
-    setMe({ ...me, fastingEnabled: next.enabled });
-    onFastingChange();
+    try {
+      const next = await api<FastingState>("/api/fasting", {
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: fastingEnabledDraft,
+          lengthHours: Number(form.get("lengthHours")),
+          startHour: Number(form.get("startHour")),
+          reminderOffsets,
+        }),
+      });
+      setFasting(next);
+      setFastingEnabledDraft(next.enabled);
+      setReminderOffsets(next.reminderOffsets ?? []);
+      setMe({ ...me, fastingEnabled: next.enabled });
+      onFastingChange();
+      navigate("/settings");
+    } catch (err) {
+      setError(message(t, err));
+    }
   }
   async function saveLanguage(language: Lang) {
     await api("/api/profile/settings", { method: "PUT", body: JSON.stringify({ language, autoPublishFoods: autoPublish }) });
@@ -996,39 +1393,18 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
       setPasswordError(message(t, err));
     }
   }
-  return (
-    <>
-      <section className="card">
-        <h1>{t.settings}</h1>
-        <MenuField
-          label={t.language}
-          value={me.user.language}
-          onChange={(next) => saveLanguage(next as Lang)}
-          options={[
-            { value: "en", label: t.english },
-            { value: "he", label: t.hebrew },
-          ]}
-        />
-        <div className="label">{t.appearance}</div>
-        <div className="segmented" role="group" aria-label={t.appearance}>
-          {THEME_MODES.map((option) => (
-            <button key={option} type="button" aria-pressed={themeMode === option} onClick={() => setThemeMode(option)}>
-              {themeLabel(t, option)}
-            </button>
-          ))}
-        </div>
-        <label>
-          <input type="checkbox" checked={autoPublish} onChange={async (event) => {
-            const next = event.target.checked;
-            setAutoPublish(next);
-            await api("/api/profile/settings", { method: "PUT", body: JSON.stringify({ autoPublishFoods: next, language: me.user.language }) });
-            setMe({ ...me, user: { ...me.user, autoPublishFoods: next } });
-          }} />
-          {t.autoPublish}
-        </label>
-      </section>
+  const back = (
+    <Link className="back-link" to="/settings">
+      <Chevron back /> {t.settings}
+    </Link>
+  );
+  if (section === "account") {
+    return (
+      <>
+        {back}
+        <h1 className="page-title">{t.account}</h1>
       {me.hasPassword && (
-      <form className="card" onSubmit={savePassword}>
+      <Form className="card" onSubmit={savePassword}>
         <h2>{t.changePassword}</h2>
         <label>
           <span>{t.currentPassword}</span>
@@ -1073,10 +1449,21 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
         {passwordError && <p className="error">{passwordError}</p>}
         {passwordStatus && <p className="rise success-text">{passwordStatus}</p>}
         <button type="submit" disabled={!currentPassword || !pwChecks.valid}>{t.save}</button>
-      </form>
+      </Form>
       )}
+        <section className="card list-card">
+          {me.user.isAdmin && <Link className="list-row" to="/permissions">{t.permissions}<Chevron /></Link>}
+          <button type="button" className="list-row danger" onClick={onLogout}>{t.logout}</button>
+        </section>
+      </>
+    );
+  }
+  if (section === "profile") {
+    return (
+      <>
+        {back}
       {profile && (
-        <form
+        <Form
           className="card"
           onSubmit={saveProfile}
           key={[
@@ -1089,37 +1476,23 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
             profile.customGoalKcal,
           ].join("|")}
         >
-          <h2>{t.profileTitle}</h2>
+          <h1>{t.profileTitle}</h1>
           <ProfileFields profile={profile} />
           {health?.connected && <p className="muted">{t.healthActivityNote}</p>}
           <button type="submit">{t.save}</button>
-        </form>
+        </Form>
       )}
-      {health && (
-        <form className="card health-card" onSubmit={saveHealth} key={`${health.stepGoal}-${health.exerciseGoalMinutes}-${health.connected}`}>
-          <h2>{t.appleHealth}</h2>
-          <div className="health-status"><span>{health.connected ? t.healthConnected : t.healthNotConnected}</span></div>
-          <div className="health-status">
-            <span>{t.healthLastSync}</span>
-            <b>{health.lastSyncedAt ? formatJerusalem(health.lastSyncedAt) : t.healthNever}</b>
-          </div>
-          {!health.connected && <p className="muted">{t.healthWebOnly}</p>}
-          {(health.connected || health.lastSyncedAt) && (
-            <>
-              <label><span>{t.healthStepGoal}</span>
-                <input name="stepGoal" type="number" inputMode="numeric" min={100} max={200000} step={100} defaultValue={health.stepGoal} required />
-              </label>
-              <label><span>{t.healthExerciseGoal}</span>
-                <input name="exerciseGoalMinutes" type="number" inputMode="numeric" min={1} max={1440} defaultValue={health.exerciseGoalMinutes} required />
-              </label>
-              <button type="submit" disabled={!me.permissions.includes("appleHealth:sync")}>{t.save}</button>
-            </>
-          )}
-        </form>
-      )}
+        {error && <p className="error">{error}</p>}
+      </>
+    );
+  }
+  if (section === "fasting") {
+    return (
+      <>
+        {back}
       {fasting && (
-        <form className="card" onSubmit={saveFasting} key={`${fasting.lengthHours}-${fasting.startHour}-${fasting.reminderOffsets.join(",")}`}>
-          <h2>{t.fasting}</h2>
+        <Form className="card" onSubmit={saveFasting} key={`${fasting.lengthHours}-${fasting.startHour}-${fasting.reminderOffsets.join(",")}`}>
+          <h1>{t.fasting}</h1>
           <label>
             <input
               name="enabled"
@@ -1151,10 +1524,100 @@ function SettingsPage({ me, setMe, onFastingChange }: { me: Me; setMe: (me: Me) 
             </fieldset>
           )}
           <button type="submit">{t.save}</button>
-        </form>
+        </Form>
       )}
+        {error && <p className="error">{error}</p>}
+      </>
+    );
+  }
+  if (section === "health" && canReadHealth) {
+    return (
+      <>
+        {back}
+      {health && (
+        <Form className="card health-card" onSubmit={saveHealth} key={`${health.stepGoal}-${health.exerciseGoalMinutes}-${health.connected}`}>
+          <h1>{t.appleHealth}</h1>
+          <div className="health-status"><span>{health.connected ? t.healthConnected : t.healthNotConnected}</span></div>
+          <div className="health-status">
+            <span>{t.healthLastSync}</span>
+            <b>{health.lastSyncedAt ? formatJerusalem(health.lastSyncedAt) : t.healthNever}</b>
+          </div>
+          {!health.connected && <p className="muted">{t.healthWebOnly}</p>}
+          {(health.connected || health.lastSyncedAt) && (
+            <>
+              <label><span>{t.healthStepGoal}</span>
+                <input name="stepGoal" type="number" inputMode="numeric" min={100} max={200000} step={100} defaultValue={health.stepGoal} required />
+              </label>
+              <label><span>{t.healthExerciseGoal}</span>
+                <input name="exerciseGoalMinutes" type="number" inputMode="numeric" min={1} max={1440} defaultValue={health.exerciseGoalMinutes} required />
+              </label>
+              <button type="submit" disabled={!me.permissions.includes("appleHealth:sync")}>{t.save}</button>
+            </>
+          )}
+        </Form>
+      )}
+        {error && <p className="error">{error}</p>}
+      </>
+    );
+  }
+  return (
+    <>
+      <h1 className="page-title">{t.settings}</h1>
+      <section className="card">
+        <MenuField
+          label={t.language}
+          value={me.user.language}
+          onChange={(next) => saveLanguage(next as Lang)}
+          options={[
+            { value: "en", label: t.english },
+            { value: "he", label: t.hebrew },
+          ]}
+        />
+        <div className="label">{t.appearance}</div>
+        <div className="segmented" role="group" aria-label={t.appearance}>
+          {THEME_MODES.map((option) => (
+            <button key={option} type="button" aria-pressed={themeMode === option} onClick={() => setThemeMode(option)}>
+              {themeLabel(t, option)}
+            </button>
+          ))}
+        </div>
+        <label>
+          <input type="checkbox" checked={autoPublish} onChange={async (event) => {
+            const next = event.target.checked;
+            setAutoPublish(next);
+            await api("/api/profile/settings", { method: "PUT", body: JSON.stringify({ autoPublishFoods: next, language: me.user.language }) });
+            setMe({ ...me, user: { ...me.user, autoPublishFoods: next } });
+          }} />
+          {t.autoPublish}
+        </label>
+      </section>
+      <section className="card list-card">
+        <Link className="list-row" to="/settings/profile">{t.profileTitle}<Chevron /></Link>
+        <Link className="list-row" to="/settings/fasting">
+          {t.fasting}
+          <span className="list-value">{fasting ? (fasting.enabled ? `${fasting.lengthHours} ${t.hours}` : t.off) : ""}</span>
+          <Chevron />
+        </Link>
+        {canReadHealth && (
+          <Link className="list-row" to="/settings/health">
+            {t.appleHealth}
+            <span className="list-value">{health ? (health.connected ? t.healthConnected : t.healthNotConnected) : ""}</span>
+            <Chevron />
+          </Link>
+        )}
+        <Link className="list-row" to="/settings/account">{t.account}<Chevron /></Link>
+      </section>
       {error && <p className="error">{error}</p>}
     </>
+  );
+}
+
+/** Points to the trailing side; flipped for RTL in CSS. */
+function Chevron({ back = false }: { back?: boolean }) {
+  return (
+    <svg className={back ? "disclosure back" : "disclosure"} viewBox="0 0 12 20" width="8" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d={back ? "M10 2 2 10l8 8" : "m2 2 8 8-8 8"} />
+    </svg>
   );
 }
 
@@ -1224,6 +1687,8 @@ function FoodForm() {
   const [food, setFood] = useState<Food | null>(null);
   const [error, setError] = useState("");
   const barcode = params.get("barcode") ?? food?.barcode ?? "";
+  const returnMeal = params.get("meal");
+  const mealToReturn = returnMeal && (MEALS as readonly string[]).includes(returnMeal) ? returnMeal : null;
   useEffect(() => {
     if (!id) return;
     api<{ food: Food }>(`/api/foods/${id}`).then((result) => setFood(result.food)).catch((err) => setError(message(t, err)));
@@ -1233,45 +1698,49 @@ function FoodForm() {
     const form = new FormData(event.currentTarget);
     try {
       const body = {
-        barcode: String(form.get("barcode") ?? barcode),
+        barcode: String(form.get("barcode") ?? barcode).trim() || null,
         name: form.get("name"),
         basis: form.get("basis"),
         calories: readNutrient(form.get("calories")),
-        protein: readNutrient(form.get("protein")),
-        carbohydrates: readNutrient(form.get("carbohydrates")),
-        fat: readNutrient(form.get("fat")),
-        fiber: readNutrient(form.get("fiber")),
-        sugars: readNutrient(form.get("sugars")),
-        sodium: readNutrient(form.get("sodium")),
+        protein: readNutrient(form.get("protein"), true),
+        carbohydrates: readNutrient(form.get("carbohydrates"), true),
+        fat: readNutrient(form.get("fat"), true),
+        fiber: readNutrient(form.get("fiber"), true),
+        sugars: readNutrient(form.get("sugars"), true),
+        sodium: readNutrient(form.get("sodium"), true),
       };
+      let saved: Food;
       if (id) {
         const { name, basis, calories, protein, carbohydrates, fat, fiber, sugars, sodium } = body;
-        await api(`/api/foods/${id}`, { method: "PUT", body: JSON.stringify({ name, basis, calories, protein, carbohydrates, fat, fiber, sugars, sodium }) });
+        saved = (await api<{ food: Food }>(`/api/foods/${id}`, { method: "PUT", body: JSON.stringify({ name, basis, calories, protein, carbohydrates, fat, fiber, sugars, sodium }) })).food;
       } else {
-        await api("/api/foods", { method: "POST", body: JSON.stringify(body) });
+        saved = (await api<{ food: Food }>("/api/foods", { method: "POST", body: JSON.stringify(body) })).food;
       }
-      navigate("/");
+      navigate(mealToReturn ? `/?meal=${mealToReturn}&food=${encodeURIComponent(saved.id)}` : "/");
     } catch (err) {
       setError(message(t, err));
     }
   }
   return (
-    <form className="card" onSubmit={save} key={food?.id ?? "new"}>
+    <Form className="card" onSubmit={save} key={food?.id ?? "new"}>
       <h1>{t.createFood}</h1>
-      {!id && <label><span>{t.barcode}</span><input name="barcode" defaultValue={barcode} required /></label>}
-      <label><span>{t.name}</span><input name="name" defaultValue={food?.name} required /></label>
+      {!id && <label><span>{t.barcode}</span><input name="barcode" defaultValue={barcode} placeholder={t.optional} inputMode="numeric" /></label>}
+      <label><span>{t.name}</span><input name="name" defaultValue={food?.name ?? (id ? undefined : params.get("name") ?? undefined)} required /></label>
       <MenuField
         name="basis"
-        label={t.solid}
+        label={t.measuredAs}
         defaultValue={food?.basis ?? "solid"}
         options={[
           { value: "solid", label: t.solid },
           { value: "liquid", label: t.liquid },
         ]}
       />
-      {(["calories", "protein", "carbohydrates", "fat", "fiber", "sugars", "sodium"] as const).map((field) => (
-        <label key={field}><span>{t[field]}</span><input name={field} defaultValue={food?.[field] ?? 0} inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
-      ))}
+      <label><span>{t.calories}</span><input name="calories" defaultValue={food?.calories} placeholder="0" inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
+      <div className="nutrient-grid">
+        {(["protein", "carbohydrates", "fat", "fiber", "sugars", "sodium"] as const).map((field) => (
+          <label key={field}><span>{t[field]}</span><input name={field} defaultValue={food?.[field]} placeholder={t.optional} inputMode="decimal" pattern="\d+([.,]\d+)?" /></label>
+        ))}
+      </div>
       {error && <p className="error">{error}</p>}
       <button type="submit">{t.save}</button>
       {id && food?.owned && (
@@ -1280,13 +1749,14 @@ function FoodForm() {
           setFood({ ...food, published: !food.published });
         }}>{food.published ? t.unpublish : t.publish}</button>
       )}
-    </form>
+    </Form>
   );
 }
 
 function ProfileFields({ profile }: { profile?: Profile }) {
   const { t } = useI18n();
-  const [sex, setSex] = useState<Sex>(profile?.sex ?? "female");
+  // No silent default: during onboarding the user picks explicitly.
+  const [sex, setSex] = useState<Sex | "">(profile?.sex ?? "");
   const [dateOfBirth, setDateOfBirth] = useState(profile?.dateOfBirth ?? "");
   const [heightCm, setHeightCm] = useState(profile?.heightCm != null ? String(profile.heightCm) : "");
   const [weightKg, setWeightKg] = useState(profile?.weightKg != null ? String(profile.weightKg) : "");
@@ -1295,10 +1765,11 @@ function ProfileFields({ profile }: { profile?: Profile }) {
   const heightNum = Number(String(heightCm).replace(",", "."));
   const weightNum = Number(String(weightKg).replace(",", "."));
   const canSuggest =
+    sex !== "" &&
     dateOfBirth.length === 10 && Number.isFinite(heightNum) && heightNum > 0 && Number.isFinite(weightNum) && weightNum > 0;
   const suggested = canSuggest
     ? suggestedCalorieGoal({
-        sex,
+        sex: sex as Sex,
         weightKg: weightNum,
         heightCm: heightNum,
         age: ageFromDob(dateOfBirth),
@@ -1317,16 +1788,17 @@ function ProfileFields({ profile }: { profile?: Profile }) {
 
   return (
     <>
-      <MenuField
-        name="sex"
-        label={t.sex}
-        value={sex}
-        onChange={(next) => setSex(next as Sex)}
-        options={[
-          { value: "female", label: t.female },
-          { value: "male", label: t.male },
-        ]}
-      />
+      <div className="field">
+        <div className="label" id="sex-label">{t.sex}</div>
+        <div className="segmented" role="radiogroup" aria-labelledby="sex-label">
+          {(["female", "male"] as const).map((option) => (
+            <button key={option} type="button" role="radio" aria-checked={sex === option} aria-pressed={sex === option} onClick={() => setSex(option)}>
+              {option === "female" ? t.female : t.male}
+            </button>
+          ))}
+        </div>
+        <input type="hidden" name="sex" value={sex} />
+      </div>
       <DateField
         name="dateOfBirth"
         label={t.dateOfBirth}
@@ -1382,6 +1854,7 @@ function ProfileFields({ profile }: { profile?: Profile }) {
         <input
           name="dailyGoalKcal"
           inputMode="numeric"
+          placeholder={t.goalAutoHint}
           value={dailyGoal}
           onChange={(event) => {
             setTouchedGoal(true);
@@ -1390,7 +1863,8 @@ function ProfileFields({ profile }: { profile?: Profile }) {
           required
         />
       </label>
-      {suggested != null && (
+      {/* Only offered once the goal differs from the suggestion. */}
+      {suggested != null && touchedGoal && (
         <button
           type="button"
           className="secondary"
@@ -1421,15 +1895,16 @@ function HourField({ name, label, defaultValue, value, onChange }: { name: strin
   );
 }
 
-function readNutrient(value: FormDataEntryValue | null): number {
+function readNutrient(value: FormDataEntryValue | null, optional = false): number {
   const raw = String(value ?? "").trim().replace(",", ".");
+  if (optional && raw === "") return 0;
   if (!/^\d+(\.\d+)?$/.test(raw)) throw new ApiError("invalid_body");
   return Number(raw);
 }
 
 function AnimatedNumber({ value, from }: { value: number; from: number }) {
   const shown = useEase(value, from);
-  return <>{Math.round(shown)}</>;
+  return <>{formatKcal(shown)}</>;
 }
 
 function useEase(target: number, initial: number) {
@@ -1485,6 +1960,34 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
   return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+/**
+ * <form> that shows a busy state while its async submit handler runs:
+ * the submit button gets a spinner and repeat submits are ignored.
+ */
+function Form({ onSubmit, children, ...props }: Omit<ComponentProps<"form">, "onSubmit"> & { onSubmit: (event: FormEvent<HTMLFormElement>) => unknown }) {
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  async function handle(event: FormEvent<HTMLFormElement>) {
+    if (busyRef.current) {
+      event.preventDefault();
+      return;
+    }
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await onSubmit(event);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+  return (
+    <form {...props} onSubmit={handle} aria-busy={busy || undefined}>
+      {children}
+    </form>
+  );
 }
 
 function message(t: Copy, err: unknown): string {

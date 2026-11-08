@@ -255,14 +255,29 @@ export function sumNutrients(rows: Nutrients[]): Nutrients {
   };
 }
 
-export function daySucceeded(input: { entryCount: number; calories: number; goalKcal: number; future: boolean }): boolean {
-  if (input.future || input.entryCount === 0) return false;
-  return input.calories <= input.goalKcal;
+export type DayStatus = "future" | "empty" | "on_track" | "over" | "met";
+
+type DayInput = { entryCount: number; calories: number; goalKcal: number; future: boolean; today?: boolean };
+
+/**
+ * "met" only once a day is over: today stays "on_track" while under the goal,
+ * otherwise a breakfast-only day would already count as a success.
+ */
+export function dayStatus(input: DayInput): DayStatus {
+  if (input.future) return "future";
+  if (input.entryCount === 0) return "empty";
+  if (input.calories > input.goalKcal) return "over";
+  return input.today ? "on_track" : "met";
+}
+
+export function daySucceeded(input: DayInput): boolean {
+  return dayStatus(input) === "met";
 }
 
 /**
- * A day uses the sedentary base (plus Apple active kcal) only while Apple Health is
- * connected, from the connection day through today. Future days keep the profile estimate.
+ * A day uses the sedentary base only while Apple Health is connected, from the
+ * connection day through today. Future days keep the profile estimate.
+ * Active calories stay visible as activity and do not raise the food budget.
  */
 export function usesHealthBase(input: {
   connected: boolean;
@@ -274,9 +289,9 @@ export function usesHealthBase(input: {
   return input.day >= input.connectedOn && input.day <= input.today;
 }
 
-/** Food budget for a day: the frozen base, plus Apple active kcal when the day is health adjusted. */
-export function effectiveGoalKcal(baseGoalKcal: number, activeKcal: number, healthAdjusted: boolean): number {
-  return healthAdjusted ? baseGoalKcal + Math.max(0, Math.round(activeKcal)) : baseGoalKcal;
+/** Food budget for a day. Active calories are ignored so exercise does not add calories you can eat. */
+export function effectiveGoalKcal(baseGoalKcal: number, _activeKcal: number, _healthAdjusted: boolean): number {
+  return baseGoalKcal;
 }
 
 export type WeekDayCandidate = {
@@ -285,6 +300,7 @@ export type WeekDayCandidate = {
   calories: number;
   entryCount: number;
   success: boolean;
+  status?: DayStatus;
   future: boolean;
   steps?: number | null;
   exerciseMinutes?: number | null;

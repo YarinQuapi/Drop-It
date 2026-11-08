@@ -86,7 +86,7 @@ appleHealthRouter.post(
       });
     });
 
-    // Connecting freezes today as the sedentary base; later syncs only change active kcal.
+    // Connecting freezes today as the sedentary base. Later syncs update activity without raising the food budget.
     if (!before.connected) await ensureGoal(user.id, today, true);
     res.json(presentSettings(await loadHealthSettings(user.id)));
   }),

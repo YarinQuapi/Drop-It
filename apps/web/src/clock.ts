@@ -72,3 +72,29 @@ export function addDays(day: string, count: number): string {
   date.setUTCDate(date.getUTCDate() + count);
   return date.toISOString().slice(0, 10);
 }
+
+/** Today's date in Jerusalem as YYYY-MM-DD (the API's day boundary). */
+export function todayJerusalemDay(now = new Date()): string {
+  const { year, month, day } = jerusalemParts(now);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function dayDate(day: string): Date {
+  return new Date(`${day}T12:00:00.000Z`);
+}
+
+/** "2 – 8 Nov" style range for a Sunday-based week, localized. */
+export function formatWeekRange(sunday: string): string {
+  const format = new Intl.DateTimeFormat(locale(), { timeZone: "UTC", day: "numeric", month: "short" });
+  return format.formatRange(dayDate(sunday), dayDate(addDays(sunday, 6)));
+}
+
+/** Short weekday ("Sun" / "א׳") for a YYYY-MM-DD day. */
+export function formatWeekday(day: string): string {
+  return new Intl.DateTimeFormat(locale(), { timeZone: "UTC", weekday: "short" }).format(dayDate(day));
+}
+
+/** "Sun, 8 Nov" style label for a YYYY-MM-DD day. */
+export function formatDayLabel(day: string): string {
+  return new Intl.DateTimeFormat(locale(), { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" }).format(dayDate(day));
+}
