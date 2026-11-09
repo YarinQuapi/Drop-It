@@ -969,8 +969,8 @@ class TodayScreen extends StatefulWidget {
 const _meals = ['breakfast', 'lunch', 'dinner', 'snacks'];
 
 class _TodayScreenState extends State<TodayScreen> {
-  Map<String, dynamic>? day;
-  Map<String, dynamic>? fasting;
+  late Map<String, dynamic>? day = widget.api.peek('/api/days/today');
+  late Map<String, dynamic>? fasting = widget.api.peek('/api/fasting');
   String error = '';
   Timer? ticker;
 
@@ -1020,6 +1020,7 @@ class _TodayScreenState extends State<TodayScreen> {
   void initState() {
     super.initState();
     AppleHealth.synced.addListener(_onHealthSynced);
+    _ensureTicker();
     unawaited(load());
   }
 
@@ -2004,7 +2005,7 @@ class FastingScreen extends StatefulWidget {
 }
 
 class _FastingScreenState extends State<FastingScreen> {
-  Map<String, dynamic>? fasting;
+  late Map<String, dynamic>? fasting = widget.api.peek('/api/fasting');
   String error = '';
   Timer? ticker;
 
@@ -2250,7 +2251,7 @@ class WeekScreen extends StatefulWidget {
 }
 
 class _WeekScreenState extends State<WeekScreen> {
-  Map<String, dynamic>? week;
+  late Map<String, dynamic>? week = widget.api.peek('/api/weeks');
   String? on;
 
   @override
@@ -2260,8 +2261,11 @@ class _WeekScreenState extends State<WeekScreen> {
   }
 
   Future<void> load() async {
-    final query = on == null ? '' : '?on=$on';
-    final data = await widget.api.send('GET', '/api/weeks$query');
+    final path = '/api/weeks${on == null ? '' : '?on=$on'}';
+    final cached = widget.api.peek(path);
+    if (cached != null && week != cached) setState(() => week = cached);
+    final data = await widget.api.send('GET', path);
+    if (!mounted || path != '/api/weeks${on == null ? '' : '?on=$on'}') return;
     setState(() => week = data);
   }
 
@@ -2548,7 +2552,9 @@ class WeightScreen extends StatefulWidget {
 }
 
 class _WeightScreenState extends State<WeightScreen> {
-  List<Map<String, dynamic>> weights = [];
+  late List<Map<String, dynamic>> weights =
+      ((widget.api.peek('/api/weights')?['weights'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>();
   final controller = TextEditingController();
   String error = '';
 
@@ -2759,11 +2765,17 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  Map<String, dynamic>? profile;
-  Map<String, dynamic>? fasting;
-  Map<String, dynamic>? healthState;
-  final stepGoal = TextEditingController();
-  final exerciseGoal = TextEditingController();
+  late Map<String, dynamic>? profile =
+      (widget.api.peek('/api/profile')?['profile'] as Map?)
+          ?.cast<String, dynamic>();
+  late Map<String, dynamic>? fasting = widget.api.peek('/api/fasting');
+  late Map<String, dynamic>? healthState = widget.api.peek('/api/apple-health');
+  late final stepGoal = TextEditingController(
+    text: healthState == null ? '' : '${healthState!['stepGoal']}',
+  );
+  late final exerciseGoal = TextEditingController(
+    text: healthState == null ? '' : '${healthState!['exerciseGoalMinutes']}',
+  );
   String healthError = '';
   bool healthBusy = false;
   bool autoPublish = false;
@@ -3602,6 +3614,14 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   @override
   void initState() {
     super.initState();
+    final cached = widget.api.peek('/api/rbac/permissions');
+    if (cached != null) {
+      operations = ((cached['operations'] as List?) ?? []).cast<String>();
+      permissions = ((cached['permissions'] as Map?) ?? {}).map(
+        (key, value) => MapEntry(key.toString(), value == true),
+      );
+      loading = false;
+    }
     unawaited(load());
   }
 

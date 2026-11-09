@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   api,
+  peek,
   ApiError,
   type AppleHealthState,
   type DayEntry,
@@ -459,11 +460,11 @@ const MEAL_COLOR: Record<MealCategory, string> = {
 
 function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; onFastingChange: () => void }) {
   const { t } = useI18n();
-  const [loadedDay, setDay] = useState<DayResponse | null>(null);
+  const [loadedDay, setDay] = useState<DayResponse | null>(() => peek<DayResponse>("/api/days/today"));
   // Removed entry waiting out its Undo window; deleted on the server afterwards.
   const [pendingRemoval, setPendingRemoval] = useState<DayEntry | null>(null);
   const removalTimer = useRef<number | null>(null);
-  const [fasting, setFasting] = useState<FastingState | null>(null);
+  const [fasting, setFasting] = useState<FastingState | null>(() => peek<FastingState>("/api/fasting"));
   const [now, setNow] = useState(Date.now());
   const [loggingMeal, setLoggingMeal] = useState<MealCategory | null>(null);
   const [query, setQuery] = useState("");
@@ -878,7 +879,7 @@ function mealLabel(t: Copy, meal: MealCategory) {
 
 function FastingPage({ onFastingChange }: { onFastingChange: () => void }) {
   const { t } = useI18n();
-  const [fasting, setFasting] = useState<FastingState | null>(null);
+  const [fasting, setFasting] = useState<FastingState | null>(() => peek<FastingState>("/api/fasting"));
   const [error, setError] = useState("");
   const [now, setNow] = useState(Date.now());
 
@@ -1102,12 +1103,14 @@ function WeekPage() {
   const { t } = useI18n();
   const [params, setParams] = useSearchParams();
   const on = params.get("on") ?? "";
-  const [week, setWeek] = useState<WeekResponse | null>(null);
+  const weekPath = `/api/weeks${on ? `?on=${on}` : ""}`;
+  const [week, setWeek] = useState<WeekResponse | null>(() => peek<WeekResponse>(weekPath));
   const [error, setError] = useState("");
   useEffect(() => {
-    const query = on ? `?on=${on}` : "";
-    api<WeekResponse>(`/api/weeks${query}`).then(setWeek).catch((err) => setError(message(t, err)));
-  }, [on, t]);
+    const cached = peek<WeekResponse>(weekPath);
+    if (cached) setWeek(cached);
+    api<WeekResponse>(weekPath).then(setWeek).catch((err) => setError(message(t, err)));
+  }, [weekPath, t]);
   if (!week) return error ? <p className="error">{error}</p> : <p className="muted loading">…</p>;
   const today = todayJerusalemDay();
   const isCurrentWeek = addDays(week.sunday, 7) > today;
@@ -1176,7 +1179,7 @@ function formatKcal(value: number): string {
 
 function WeightPage() {
   const { t } = useI18n();
-  const [weights, setWeights] = useState<WeightPoint[]>([]);
+  const [weights, setWeights] = useState<WeightPoint[]>(() => peek<{ weights: WeightPoint[] }>("/api/weights")?.weights ?? []);
   const [error, setError] = useState("");
   async function load() {
     const data = await api<{ weights: WeightPoint[] }>("/api/weights");
@@ -1258,17 +1261,19 @@ function SettingsPage({ me, setMe, onFastingChange, onLogout }: { me: Me; setMe:
   const { section } = useParams();
   const navigate = useNavigate();
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [fasting, setFasting] = useState<FastingState | null>(null);
-  const [fastingEnabledDraft, setFastingEnabledDraft] = useState(false);
-  const [reminderOffsets, setReminderOffsets] = useState<ReminderOffset[]>([0]);
+  const cachedProfile = peek<{ profile: Profile }>("/api/profile");
+  const cachedFasting = peek<FastingState>("/api/fasting");
+  const [profile, setProfile] = useState<Profile | null>(cachedProfile?.profile ?? null);
+  const [fasting, setFasting] = useState<FastingState | null>(cachedFasting);
+  const [fastingEnabledDraft, setFastingEnabledDraft] = useState(cachedFasting?.enabled ?? false);
+  const [reminderOffsets, setReminderOffsets] = useState<ReminderOffset[]>(cachedFasting?.reminderOffsets ?? [0]);
   const [autoPublish, setAutoPublish] = useState(me.user.autoPublishFoods);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordStatus, setPasswordStatus] = useState("");
   const [passwordError, setPasswordError] = useState("");
-  const [health, setHealth] = useState<AppleHealthState | null>(null);
+  const [health, setHealth] = useState<AppleHealthState | null>(() => peek<AppleHealthState>("/api/apple-health"));
   const [error, setError] = useState("");
   const pwChecks = checkSignupPassword(newPassword, confirmPassword);
   const canReadHealth = me.permissions.includes("appleHealth:read");
@@ -1623,7 +1628,7 @@ function Chevron({ back = false }: { back?: boolean }) {
 
 function PermissionsPage() {
   const { t } = useI18n();
-  const [permissions, setPermissions] = useState<Record<Operation, boolean> | null>(null);
+  const [permissions, setPermissions] = useState<Record<Operation, boolean> | null>(() => peek<PermissionsResponse>("/api/rbac/permissions")?.permissions ?? null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -1684,7 +1689,7 @@ function FoodForm() {
   const { id } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [food, setFood] = useState<Food | null>(null);
+  const [food, setFood] = useState<Food | null>(() => (id ? peek<{ food: Food }>(`/api/foods/${id}`)?.food ?? null : null));
   const [error, setError] = useState("");
   const barcode = params.get("barcode") ?? food?.barcode ?? "";
   const returnMeal = params.get("meal");

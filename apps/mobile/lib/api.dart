@@ -25,6 +25,14 @@ class Api {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   String? token;
 
+  /// Last successful GET response per path. Screens seed their state from it so
+  /// switching tabs shows data instantly while a fresh copy loads behind it.
+  final Map<String, Map<String, dynamic>> _cache = {};
+
+  Map<String, dynamic>? peek(String path) => _cache[path];
+
+  void clearCache() => _cache.clear();
+
   Future<File> _sessionFile() async {
     final dir = await getApplicationSupportDirectory();
     if (!await dir.exists()) {
@@ -109,6 +117,8 @@ class Api {
 
   Future<void> setToken(String? value) async {
     token = value;
+    // Login, logout and session expiry change whose data the cache holds.
+    clearCache();
     try {
       if (value == null) {
         await _storage.delete(key: 'token');
@@ -176,6 +186,7 @@ class Api {
     if (sent.statusCode >= 400) {
       throw ApiException(data['error'] as String? ?? 'server_error', statusCode: sent.statusCode);
     }
+    if (method.toUpperCase() == 'GET') _cache[path] = data;
     return data;
   }
 }
