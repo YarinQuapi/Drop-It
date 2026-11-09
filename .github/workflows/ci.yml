@@ -1,0 +1,82 @@
+# Checks every pull request (and master) before anything is deployed:
+# API typecheck + tests, web typecheck + build, Flutter analyze + tests.
+# Deployment stays in publish-api.yml.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to the same PR cancels the run that is now out of date.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API (typecheck + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Prisma reads these at generate time; tests do not touch a database.
+    env:
+      DATABASE_URL: mysql://ci:ci@127.0.0.1:3306/ci
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_USER: ci
+      DATABASE_PASSWORD: ci
+      DATABASE_NAME: ci
+      DATABASE_PORT: 3306
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Generate Prisma client
+        working-directory: apps/api
+        run: npx prisma generate --config prisma7.config.ts
+      - name: Typecheck
+        run: npx tsc --noEmit -p apps/api
+      - name: Test
+        run: npm test
+
+  web:
+    name: Web (typecheck + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build
+        run: npm run build -w @drop-it/web
+
+  mobile:
+    name: Mobile (analyze + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+          cache: true
+      - run: flutter pub get
+      # Errors and warnings fail the build; style infos are reported only.
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+      - name: Test
+        run: flutter test
