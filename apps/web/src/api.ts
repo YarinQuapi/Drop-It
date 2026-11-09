@@ -17,7 +17,21 @@ export function getStoredToken(): string | null {
   }
 }
 
+// Last successful GET response per path. Pages seed their state from it so
+// navigating back shows data instantly while a fresh copy loads behind it.
+const responseCache = new Map<string, unknown>();
+
+export function peek<T>(path: string): T | null {
+  return (responseCache.get(path) as T | undefined) ?? null;
+}
+
+export function clearApiCache(): void {
+  responseCache.clear();
+}
+
 export function setStoredToken(token: string | null): void {
+  // Login, logout and session expiry all change who the cached data belongs to.
+  clearApiCache();
   try {
     if (token) {
       localStorage.setItem(TOKEN_KEY, token);
@@ -51,6 +65,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (typeof data.token === "string" && data.token.length > 0) {
     setStoredToken(data.token);
   }
+  if (!init.method || init.method.toUpperCase() === "GET") responseCache.set(path, data);
   return data as T;
 }
 
