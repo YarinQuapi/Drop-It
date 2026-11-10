@@ -12,8 +12,11 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'api.dart';
 import 'calorie_goal.dart';
+import 'catalog.dart';
 import 'copy.dart';
 import 'health.dart';
+import 'nutrition_parser.dart';
+import 'nutrition_scan.dart';
 import 'reminders.dart';
 import 'theme.dart';
 
@@ -893,6 +896,22 @@ class _HomeScreenState extends State<HomeScreen> {
         CupertinoIcons.timer,
         CupertinoIcons.timer_fill,
         FastingScreen(api: widget.api, t: t, sync: widget.sync),
+      ),
+      (
+        t.catalogTab,
+        CupertinoIcons.cube_box,
+        CupertinoIcons.cube_box_fill,
+        CatalogScreen(
+          api: widget.api,
+          t: t,
+          canVerify: canVerifyFoods,
+          onCreateFood: () => Navigator.push<Map<String, dynamic>>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FoodScreen(api: widget.api, t: t),
+            ),
+          ),
+        ),
       ),
       (
         t.weight,
@@ -4036,6 +4055,49 @@ class _FoodScreenState extends State<FoodScreen> {
   final sugars = TextEditingController();
   final sodium = TextEditingController();
   String error = '';
+  final scanned = <TextEditingController>{};
+  bool scannedFromServing = false;
+  String scannedText = '';
+
+  Future<void> scanLabel() async {
+    final scan = await Navigator.push<NutritionScan>(
+      context,
+      MaterialPageRoute(builder: (_) => NutritionScanScreen(t: widget.t)),
+    );
+    if (scan == null) return;
+    String text(num? v) => v == null ? '' : _plainNumber(v);
+    setState(() {
+      scanned.clear();
+      for (final (controller, value) in [
+        (calories, scan.calories),
+        (protein, scan.protein),
+        (carbohydrates, scan.carbohydrates),
+        (fat, scan.fat),
+        (fiber, scan.fiber),
+        (sugars, scan.sugars),
+        (sodium, scan.sodium),
+      ]) {
+        if (value == null) continue;
+        controller.text = text(value);
+        scanned.add(controller);
+      }
+      basis = scan.liquid ? 'liquid' : 'solid';
+      scannedFromServing = scan.fromServing;
+      scannedText = scan.raw;
+    });
+  }
+
+  Widget scannedField(TextEditingController controller, String label, String hint) {
+    return decimalField(
+      controller,
+      label,
+      hint: hint,
+      helper: scanned.contains(controller) ? widget.t.scannedCheck : null,
+      onChanged: (_) {
+        if (scanned.remove(controller)) setState(() {});
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4045,6 +4107,43 @@ class _FoodScreenState extends State<FoodScreen> {
       body: AppList(
         gap: Gaps.md,
         children: [
+          SizedBox(
+            height: Gaps.hit,
+            child: OutlinedButton.icon(
+              onPressed: scanLabel,
+              icon: const Icon(CupertinoIcons.camera_viewfinder),
+              label: Text(t.scanLabel),
+            ),
+          ),
+          if (scannedText.isNotEmpty)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    content: SingleChildScrollView(
+                      child: SelectableText(
+                        scannedText,
+                        textDirection: TextDirection.ltr,
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text(t.close),
+                      ),
+                    ],
+                  ),
+                ),
+                child: Text(t.showScannedText),
+              ),
+            ),
+          if (scannedFromServing)
+            Text(
+              t.scannedFromServing,
+              style: TextStyle(color: context.apple.labelSecondary),
+            ),
           if (widget.barcode != null)
             Text(
               '${t.barcode}: ${widget.barcode}',
@@ -4072,7 +4171,7 @@ class _FoodScreenState extends State<FoodScreen> {
             ],
             onChanged: (value) => setState(() => basis = value),
           ),
-          decimalField(calories, t.calories, hint: '0'),
+          scannedField(calories, t.calories, '0'),
           for (final pair in [
             [(protein, t.protein), (carbohydrates, t.carbohydrates)],
             [(fat, t.fat), (fiber, t.fiber)],
@@ -4083,7 +4182,7 @@ class _FoodScreenState extends State<FoodScreen> {
               children: [
                 for (final (controller, label) in pair)
                   Expanded(
-                    child: decimalField(controller, label, hint: t.optional),
+                    child: scannedField(controller, label, t.optional),
                   ),
               ],
             ),

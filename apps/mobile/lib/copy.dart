@@ -125,6 +125,34 @@ class Copy {
   String get noMatches => pick('No matching foods.', 'לא נמצא מזון תואם.');
   String get measuredAs => pick('Measured as', 'נמדד לפי');
   String get optional => pick('Optional', 'רשות');
+  String get scanLabel => pick('Scan nutrition label', 'סריקת טבלת ערכים תזונתיים');
+  String get scanLabelHint => pick(
+    'Take a clear, well-lit photo of the nutrition table. English and Hebrew labels are supported.',
+    'צלמו תמונה ברורה ומוארת של טבלת הערכים התזונתיים. תוויות בעברית ובאנגלית נתמכות.',
+  );
+  String get takePhoto => pick('Take photo', 'צילום');
+  String get retakePhoto => pick('Retake photo', 'צילום מחדש');
+  String get chooseFromLibrary => pick('Choose from library', 'בחירה מהגלריה');
+  String get scanReading => pick('Reading label…', 'קורא את התווית…');
+  String get scanNothingFound => pick(
+    'Could not find nutrition values. Try again with better light, or enter them manually.',
+    'לא נמצאו ערכים תזונתיים. נסו שוב עם יותר אור, או הזינו ידנית.',
+  );
+  String get scanFailed => pick(
+    'Could not read the photo. Try again or enter the values manually.',
+    'לא ניתן לקרוא את התמונה. נסו שוב או הזינו ידנית.',
+  );
+  String get cameraUnavailable => pick(
+    'The camera is unavailable. Check camera access in Settings.',
+    'המצלמה אינה זמינה. בדקו את הרשאת המצלמה בהגדרות.',
+  );
+  String get showScannedText => pick('Show recognized text', 'הצגת הטקסט שזוהה');
+  String get close => pick('Close', 'סגירה');
+  String get scannedCheck => pick('Scanned – please check', 'נסרק – נא לבדוק');
+  String get scannedFromServing => pick(
+    'The label only listed per-serving values, so they were converted to per 100. Please check them.',
+    'בתווית מופיעים ערכים למנה בלבד, ולכן הומרו ל-100. נא לבדוק אותם.',
+  );
   String get cancel => pick('Cancel', 'ביטול');
   String get undo => pick('Undo', 'ביטול פעולה');
   String get kg => pick('kg', 'ק״ג');
@@ -185,6 +213,18 @@ class Copy {
   String get unpublish => pick('Stop sharing', 'הפסקת שיתוף');
   String get verify => pick('Verify', 'אימות');
   String get verified => pick('Verified', 'מאומת');
+  String get foodCatalog => pick('Food catalog', 'קטלוג מזון');
+  String get catalogTab => pick('Foods', 'מזונות');
+  String get catalogPublished => pick('Published', 'מפורסמים');
+  String get catalogMine => pick('My foods', 'המזונות שלי');
+  String get catalogSearch => pick('Search by name or barcode', 'חיפוש לפי שם או ברקוד');
+  String get catalogEmpty => pick('No foods found.', 'לא נמצאו מזונות.');
+  String get catalogEmptyMine =>
+      pick("You haven't added any foods yet.", 'עוד לא הוספתם מזונות.');
+  String get catalogAll => pick('All', 'הכול');
+  String get catalogUnverified => pick('Unverified', 'לא מאומתים');
+  String get catalogLoadMore => pick('Load more', 'טען עוד');
+  String get catalogPrivate => pick('Private', 'פרטי');
   String get chooseFood => pick('Choose a published food', 'בחירת מזון שפורסם');
   String get noFood => pick(
     'This barcode is not in the database yet.',

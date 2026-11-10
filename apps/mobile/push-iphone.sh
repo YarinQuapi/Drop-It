@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Build the latest release and install it on a paired iPhone.
+# Build the latest release and update it on a paired iPhone.
+# The app is upgraded in place (no uninstall), so its data and the "trust this
+# developer" approval on the phone are kept. It does not open the app.
 # Usage: ./push-iphone.sh [device-id]
 
 set -euo pipefail
@@ -56,19 +58,19 @@ if [[ -n "$device_name" ]]; then
 else
   echo "Installing ${bundle} on ${device_id}..."
 fi
-flutter install --release -d "$device_id" --device-timeout 60
-
-echo "Opening Drop It..."
-launched=0
-for _ in 1 2 3; do
-  if xcrun devicectl device process launch --device "$device_id" "$bundle"; then
-    launched=1
+# The first attempt can hit a sleeping or locked phone ("Connection reset by
+# peer"); it wakes the connection, so retry a few times.
+installed=0
+for attempt in 1 2 3; do
+  if xcrun devicectl device install app --device "$device_id" "$app"; then
+    installed=1
     break
   fi
-  sleep 2
+  echo "Install attempt ${attempt} failed. Keep the iPhone unlocked; retrying..." >&2
+  sleep 3
 done
-if [[ "$launched" -ne 1 ]]; then
-  echo "The update is installed, but the iPhone will not open it until this Mac's developer certificate is trusted." >&2
-  echo "On the iPhone: Settings → General → VPN & Device Management → Apple Development: yarinleviq@gmail.com → Trust. Then open Drop It." >&2
+if [[ "$installed" -ne 1 ]]; then
+  echo "Could not reach the iPhone. Unlock it and connect by cable (or make sure it is on the same Wi-Fi), then run this again." >&2
   exit 1
 fi
+echo "Updated. Open Drop It on the iPhone when you are ready."

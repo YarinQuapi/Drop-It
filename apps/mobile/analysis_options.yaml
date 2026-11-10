@@ -13,6 +13,8 @@ analyzer:
   exclude:
     - build/**
     - ios/**
+    # Vendored plugin (patched iOS code); not ours to lint.
+    - packages/**
 
 linter:
   # The lint rules applied to this project can be customized in the
