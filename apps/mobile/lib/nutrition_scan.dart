@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'api.dart';
 import 'copy.dart';
 import 'nutrition_parser.dart';
 import 'theme.dart';
@@ -102,13 +104,96 @@ Future<NutritionScan> scanNutritionImage(
     if (best == null || scan.found > best.found) best = scan;
     if (best.found >= 5) break;
   }
-  return best!;
+  return best!.withPhoto(full);
+}
+
+/// A report photo: JPEG, at most 1600 px on the long side, as base64. Phone
+/// photos are several MB; this keeps an upload to a few hundred KB.
+Future<String> _reportPhoto(String path) => compute(_encodeReportPhoto, path);
+
+String _encodeReportPhoto(String path) {
+  final decoded = img.decodeImage(File(path).readAsBytesSync());
+  if (decoded == null) throw const FormatException('bad image');
+  return base64Encode(img.encodeJpg(_fit(decoded, 1600), quality: 80));
+}
+
+/// Sends a scan the user flagged as wrong, with its photo, to the server.
+Future<void> sendScanReport(
+  Api api,
+  NutritionScan scan,
+  String note,
+  String language,
+) async {
+  final path = scan.photo;
+  if (path == null) throw StateError('no photo');
+  await api.send(
+    'POST',
+    '/api/scan-reports',
+    body: {
+      'photo': await _reportPhoto(path),
+      'rawText': scan.raw.length > 20000 ? scan.raw.substring(0, 20000) : scan.raw,
+      'parsed': scan.toJson(),
+      'note': note.trim(),
+      'language': language,
+    },
+  );
+}
+
+/// Asks for an optional note and uploads [scan] as a bad-scan report.
+Future<void> reportBadScan(
+  BuildContext context,
+  Api api,
+  Copy t,
+  NutritionScan scan,
+) async {
+  final note = TextEditingController();
+  final send = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(t.reportScan),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t.reportScanHint),
+          const SizedBox(height: Gaps.md),
+          TextField(
+            controller: note,
+            maxLength: 500,
+            maxLines: 3,
+            decoration: InputDecoration(hintText: t.reportScanNote),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(t.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(t.reportScanSend),
+        ),
+      ],
+    ),
+  );
+  final text = note.text;
+  note.dispose();
+  if (send != true || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await sendScanReport(api, scan, text, t.lang);
+    messenger.showSnackBar(SnackBar(content: Text(t.reportScanThanks)));
+  } catch (_) {
+    messenger.showSnackBar(SnackBar(content: Text(t.reportScanFailed)));
+  }
 }
 
 /// Asks for a photo of a nutrition table, reads it, and pops a
 /// [NutritionScan] (or nothing if the user backs out).
 class NutritionScanScreen extends StatefulWidget {
-  const NutritionScanScreen({super.key, required this.t});
+  const NutritionScanScreen({super.key, required this.api, required this.t});
+  final Api api;
   final Copy t;
 
   @override
@@ -121,6 +206,7 @@ class _NutritionScanScreenState extends State<NutritionScanScreen> {
   String error = '';
   String? photo;
   String rawText = '';
+  NutritionScan? failed;
 
   @override
   void initState() {
@@ -129,7 +215,10 @@ class _NutritionScanScreenState extends State<NutritionScanScreen> {
   }
 
   Future<void> pick(ImageSource source) async {
-    setState(() => error = '');
+    setState(() {
+      error = '';
+      failed = null;
+    });
     XFile? file;
     try {
       file = await picker.pickImage(source: source, imageQuality: 95);
@@ -155,6 +244,7 @@ class _NutritionScanScreenState extends State<NutritionScanScreen> {
       setState(() {
         busy = false;
         rawText = scan.raw;
+        failed = scan;
         error = widget.t.scanNothingFound;
       });
     } catch (_) {
@@ -201,6 +291,11 @@ class _NutritionScanScreenState extends State<NutritionScanScreen> {
               rawText,
               style: TextStyle(fontSize: 12, color: apple.labelSecondary),
               textDirection: TextDirection.ltr,
+            ),
+          if (!busy && failed != null)
+            TextButton(
+              onPressed: () => reportBadScan(context, widget.api, t, failed!),
+              child: Text(t.reportScan),
             ),
           if (!busy) ...[
             SizedBox(

@@ -9,6 +9,7 @@ import { fastingRouter } from "./routes/fasting.js";
 import { foodsRouter } from "./routes/foods.js";
 import { profileRouter } from "./routes/profile.js";
 import { rbacRouter } from "./routes/rbac.js";
+import { scanReportsRouter } from "./routes/scan-reports.js";
 import { weeksRouter } from "./routes/weeks.js";
 import { weightsRouter } from "./routes/weights.js";
 
@@ -29,8 +30,10 @@ export function createApp() {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
+  // Mounted before the global JSON parser: it takes photos, so it has its own limit.
+  app.use("/api/scan-reports", scanReportsRouter);
+  app.use(express.json({ limit: "1mb" }));
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });

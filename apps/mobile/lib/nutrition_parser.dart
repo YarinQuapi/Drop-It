@@ -20,6 +20,7 @@ class NutritionScan {
     this.liquid = false,
     this.fromServing = false,
     this.raw = '',
+    this.photo,
   });
 
   final num? calories;
@@ -41,6 +42,9 @@ class NutritionScan {
   /// The OCR text this was parsed from (for the "show text" debug view).
   final String raw;
 
+  /// The (upright) photo this was read from, kept so a bad scan can be reported.
+  final String? photo;
+
   int get found => [
     calories,
     protein,
@@ -54,7 +58,11 @@ class NutritionScan {
   /// Enough to be worth prefilling the form with.
   bool get usable => found >= 2;
 
-  NutritionScan withRaw(String text) => NutritionScan(
+  NutritionScan withRaw(String text) => _copy(raw: text);
+
+  NutritionScan withPhoto(String path) => _copy(photo: path);
+
+  NutritionScan _copy({String? raw, String? photo}) => NutritionScan(
     calories: calories,
     protein: protein,
     carbohydrates: carbohydrates,
@@ -64,8 +72,22 @@ class NutritionScan {
     sodium: sodium,
     liquid: liquid,
     fromServing: fromServing,
-    raw: text,
+    raw: raw ?? this.raw,
+    photo: photo ?? this.photo,
   );
+
+  /// The parsed values, for a scan report.
+  Map<String, Object?> toJson() => {
+    'calories': calories,
+    'protein': protein,
+    'carbohydrates': carbohydrates,
+    'fat': fat,
+    'fiber': fiber,
+    'sugars': sugars,
+    'sodium': sodium,
+    'liquid': liquid,
+    'fromServing': fromServing,
+  };
 }
 
 enum _Field { calories, protein, carbs, fat, fiber, sugars, sodium, salt }

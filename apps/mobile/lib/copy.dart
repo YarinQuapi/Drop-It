@@ -146,6 +146,17 @@ class Copy {
     'The camera is unavailable. Check camera access in Settings.',
     'המצלמה אינה זמינה. בדקו את הרשאת המצלמה בהגדרות.',
   );
+  String get reportScan => pick('Report a bad scan', 'דיווח על סריקה שגויה');
+  String get reportScanHint => pick(
+    'Sends the photo and the recognized text so the scanner can be improved.',
+    'שולח את התמונה ואת הטקסט שזוהה כדי לשפר את הסורק.',
+  );
+  String get reportScanNote =>
+      pick('What was wrong? (optional)', 'מה הייתה הטעות? (לא חובה)');
+  String get reportScanSend => pick('Send', 'שליחה');
+  String get reportScanThanks => pick('Thanks, report sent', 'תודה, הדיווח נשלח');
+  String get reportScanFailed =>
+      pick('Could not send the report', 'שליחת הדיווח נכשלה');
   String get showScannedText => pick('Show recognized text', 'הצגת הטקסט שזוהה');
   String get close => pick('Close', 'סגירה');
   String get scannedCheck => pick('Scanned – please check', 'נסרק – נא לבדוק');

@@ -160,3 +160,14 @@ export const catalogQuerySchema = z.object({
   q: z.string().trim().max(64).default(""),
   offset: z.coerce.number().int().min(0).max(100000).default(0),
 });
+
+// A photo is sent as base64 (about 4/3 of its size); the app downsizes it first.
+export const MAX_SCAN_PHOTO_BYTES = 4 * 1024 * 1024;
+
+export const scanReportSchema = z.object({
+  photo: z.string().min(1).max(Math.ceil((MAX_SCAN_PHOTO_BYTES * 4) / 3) + 8),
+  rawText: z.string().max(20000),
+  parsed: z.record(z.unknown()),
+  note: z.string().trim().max(500).default(""),
+  language: z.string().max(8),
+});
