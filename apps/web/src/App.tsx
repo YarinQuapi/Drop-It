@@ -138,12 +138,152 @@ function Shell({ me, setMe }: { me: Me; setMe: (me: Me | null) => void }) {
           <Route path="/fasting" element={<FastingPage onFastingChange={bumpReminders} />} />
           <Route path="/settings/:section?" element={<SettingsPage me={me} setMe={setMe} onFastingChange={bumpReminders} onLogout={logout} />} />
           <Route path="/permissions" element={me.user.isAdmin ? <PermissionsPage /> : <Navigate to="/" />} />
+          <Route path="/catalog" element={<CatalogPage canVerifyFoods={canVerifyFoods} />} />
           <Route path="/foods/new" element={<FoodForm />} />
           <Route path="/foods/:id" element={<FoodForm />} />
         </Routes>
       </div>
       </div>
       <TabNav className="tabbar" />
+    </>
+  );
+}
+
+type CatalogScope = "published" | "mine";
+type CatalogStatus = "all" | "verified" | "unverified";
+type CatalogResponse = { foods: Food[]; hasMore: boolean };
+
+/** Every published food, or your own; admins (foods:verify) can verify entries here. */
+function CatalogPage({ canVerifyFoods }: { canVerifyFoods: boolean }) {
+  const { t } = useI18n();
+  const [scope, setScope] = useState<CatalogScope>("published");
+  const [status, setStatus] = useState<CatalogStatus>("all");
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [foods, setFoods] = useState<Food[] | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const request = useRef(0);
+
+  // Debounce typing so every keystroke isn't a request.
+  useEffect(() => {
+    const id = window.setTimeout(() => setQuery(search.trim()), 250);
+    return () => window.clearTimeout(id);
+  }, [search]);
+
+  function url(offset: number) {
+    const params = new URLSearchParams({ scope, status, offset: String(offset) });
+    if (query) params.set("q", query);
+    return `/api/foods/catalog?${params}`;
+  }
+
+  useEffect(() => {
+    const id = ++request.current;
+    setError("");
+    setExpanded(null);
+    api<CatalogResponse>(url(0))
+      .then((res) => {
+        if (id !== request.current) return; // a newer filter already answered
+        setFoods(res.foods);
+        setHasMore(res.hasMore);
+      })
+      .catch((err) => {
+        if (id === request.current) setError(message(t, err));
+      });
+  }, [scope, status, query]);
+
+  async function loadMore() {
+    if (!foods) return;
+    const id = request.current;
+    setLoadingMore(true);
+    try {
+      const res = await api<CatalogResponse>(url(foods.length));
+      if (id !== request.current) return;
+      setFoods([...foods, ...res.foods]);
+      setHasMore(res.hasMore);
+    } catch (err) {
+      setError(message(t, err));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function verify(food: Food) {
+    try {
+      const res = await api<{ food: Food }>(`/api/foods/${food.id}/verify`, { method: "POST" });
+      // Only one verified food per barcode: the server un-verifies the others.
+      setFoods((current) =>
+        (current ?? []).map((item) =>
+          item.id === food.id ? res.food : food.barcode && item.barcode === food.barcode ? { ...item, verified: false } : item,
+        ),
+      );
+    } catch (err) {
+      setError(message(t, err));
+    }
+  }
+
+  return (
+    <>
+      <h1>{t.foodCatalog}</h1>
+      <div className="segmented" role="group" aria-label={t.foodCatalog}>
+        <button type="button" aria-pressed={scope === "published"} onClick={() => setScope("published")}>{t.catalogPublished}</button>
+        <button type="button" aria-pressed={scope === "mine"} onClick={() => setScope("mine")}>{t.catalogMine}</button>
+      </div>
+      <div className="catalog-tools">
+        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t.catalogSearch} aria-label={t.catalogSearch} />
+        <div className="segmented" role="group" aria-label={t.catalogFilter}>
+          <button type="button" aria-pressed={status === "all"} onClick={() => setStatus("all")}>{t.catalogAll}</button>
+          <button type="button" aria-pressed={status === "verified"} onClick={() => setStatus("verified")}>{t.verified}</button>
+          <button type="button" aria-pressed={status === "unverified"} onClick={() => setStatus("unverified")}>{t.catalogUnverified}</button>
+        </div>
+        {scope === "mine" && <Link className="button" to="/foods/new">{t.createFood}</Link>}
+      </div>
+      {error && <p className="error">{error}</p>}
+      {!foods && !error && <p className="muted loading">…</p>}
+      {foods && foods.length === 0 && <p className="muted">{scope === "mine" && !query && status === "all" ? t.catalogEmptyMine : t.catalogEmpty}</p>}
+      {foods && foods.length > 0 && (
+        <div className="card list-card catalog-list">
+          {foods.map((food) => {
+            const open = expanded === food.id;
+            return (
+              <div key={food.id} className="catalog-item">
+                <button type="button" className="food-row" aria-expanded={open} onClick={() => setExpanded(open ? null : food.id)}>
+                  <span className="food-row-name">
+                    <strong>{food.name}</strong>
+                    <span className="muted">{food.calories} {t.kcal} / 100 {unitLabel(t, food)}</span>
+                  </span>
+                  <span className="catalog-badges">
+                    {food.verified && <span className="chip chip-verified">{t.verified}</span>}
+                    {food.owned && !food.published && <span className="chip">{t.catalogPrivate}</span>}
+                  </span>
+                </button>
+                {open && (
+                  <div className="catalog-detail rise">
+                    <dl className="catalog-macros">
+                      <div><dt>{t.protein}</dt><dd>{food.protein}</dd></div>
+                      <div><dt>{t.carbohydrates}</dt><dd>{food.carbohydrates}</dd></div>
+                      <div><dt>{t.fat}</dt><dd>{food.fat}</dd></div>
+                      <div><dt>{t.fiber}</dt><dd>{food.fiber}</dd></div>
+                      <div><dt>{t.sugars}</dt><dd>{food.sugars}</dd></div>
+                      <div><dt>{t.sodium}</dt><dd>{food.sodium}</dd></div>
+                    </dl>
+                    {food.barcode && <p className="muted">{t.barcode}: {food.barcode}</p>}
+                    <div className="fast-actions">
+                      {canVerifyFoods && food.published && !food.verified && (
+                        <button type="button" onClick={() => verify(food)}>{t.verify}</button>
+                      )}
+                      {food.owned && <Link className="secondary" to={`/foods/${food.id}`}>{t.edit}</Link>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {hasMore && <button type="button" className="secondary" disabled={loadingMore} onClick={loadMore}>{t.catalogLoadMore}</button>}
     </>
   );
 }
@@ -155,6 +295,7 @@ function TabNav({ className }: { className: string }) {
     { to: "/", label: t.today, end: true, icon: <><circle cx="12" cy="12" r="8" opacity="0.35" /><path d="M12 4a8 8 0 0 1 7.6 10.5" /></> },
     { to: "/week", label: t.week, icon: <path d="M5 20V12M10 20V6M15 20v-9M20 20V9" /> },
     { to: "/fasting", label: t.fastingTab, icon: <><circle cx="12" cy="13" r="7.5" /><path d="M12 9.5V13l2.5 1.5M10 3h4" /></> },
+    { to: "/catalog", label: t.catalogTab, icon: <><path d="M4 7.5 12 4l8 3.5v9L12 20l-8-3.5z" /><path d="M4 7.5 12 11l8-3.5M12 11v9" /></> },
     { to: "/weight", label: t.weight, icon: <><rect x="4" y="4" width="16" height="16" rx="4" /><path d="M9 10a3 3 0 0 1 6 0M12 10l1.5-1.5" /></> },
     { to: "/settings", label: t.settings, icon: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" /></> },
   ];

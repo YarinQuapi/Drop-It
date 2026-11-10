@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pickRecentFoods, pickSearchResults } from "./food-search.js";
+import { catalogWhere, pickRecentFoods, pickSearchResults } from "./food-search.js";
 
 const food = (id: string, barcode: string, name: string, ownerId: string, verified = false) => ({
   id,
@@ -60,4 +60,26 @@ test("recent foods are distinct, newest first, with the last amount", () => {
     { foodId: "a", lastAmount: 150 },
     { foodId: "b", lastAmount: 30 },
   ]);
+});
+
+test("catalog lists every published food, or only the viewer's own", () => {
+  assert.deepEqual(catalogWhere("me", { scope: "published", status: "all", q: "" }), {
+    AND: [{ published: true }],
+  });
+  assert.deepEqual(catalogWhere("me", { scope: "mine", status: "all", q: "" }), {
+    AND: [{ ownerId: "me" }],
+  });
+});
+
+test("catalog narrows by verification status and search text", () => {
+  assert.deepEqual(catalogWhere("me", { scope: "published", status: "unverified", q: "milk" }), {
+    AND: [
+      { published: true },
+      { verifiedAt: null },
+      { OR: [{ name: { contains: "milk" } }, { barcode: { startsWith: "milk" } }] },
+    ],
+  });
+  assert.deepEqual(catalogWhere("me", { scope: "published", status: "verified", q: "" }).AND[1], {
+    verifiedAt: { not: null },
+  });
 });

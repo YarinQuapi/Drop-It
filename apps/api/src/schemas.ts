@@ -153,3 +153,10 @@ export const fastingSchema = z.object({
     .max(3)
     .default([0]),
 });
+
+export const catalogQuerySchema = z.object({
+  scope: z.enum(["published", "mine"]).default("published"),
+  status: z.enum(["all", "verified", "unverified"]).default("all"),
+  q: z.string().trim().max(64).default(""),
+  offset: z.coerce.number().int().min(0).max(100000).default(0),
+});
