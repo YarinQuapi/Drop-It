@@ -42,6 +42,10 @@ dependencies:
   timezone: ^0.11.1
   sign_in_with_apple: ^8.2.0
   crypto: ^3.0.8
+  flutter_tesseract_ocr:
+    path: packages/flutter_tesseract_ocr
+  image_picker: ^1.2.4
+  image: ^4.12.0
 
 dev_dependencies:
   flutter_test:
@@ -64,6 +68,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/tessdata_config.json
+    - assets/tessdata/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

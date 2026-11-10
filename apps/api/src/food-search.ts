@@ -44,3 +44,24 @@ export function pickRecentFoods(
   }
   return result;
 }
+
+export const CATALOG_PAGE_SIZE = 30;
+
+export type CatalogScope = "published" | "mine";
+export type CatalogStatus = "all" | "verified" | "unverified";
+
+/**
+ * Filter for the food catalog: every published food, or only the viewer's own
+ * foods (published or not). Optionally narrowed to verified/unverified and to
+ * a name or barcode search.
+ */
+export function catalogWhere(
+  viewerId: string,
+  { scope, status, q }: { scope: CatalogScope; status: CatalogStatus; q: string },
+) {
+  const and: object[] = [scope === "mine" ? { ownerId: viewerId } : { published: true }];
+  if (status === "verified") and.push({ verifiedAt: { not: null } });
+  if (status === "unverified") and.push({ verifiedAt: null });
+  if (q) and.push({ OR: [{ name: { contains: q } }, { barcode: { startsWith: q } }] });
+  return { AND: and };
+}

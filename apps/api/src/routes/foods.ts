@@ -3,10 +3,10 @@ import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
 import { resolveBarcode } from "../domain.js";
 import { asyncRoute, HttpError } from "../http.js";
-import { pickRecentFoods, pickSearchResults } from "../food-search.js";
+import { CATALOG_PAGE_SIZE, catalogWhere, pickRecentFoods, pickSearchResults } from "../food-search.js";
 import { num, presentFood } from "../present.js";
 import { requirePermission } from "../rbac.js";
-import { foodSchema, foodUpdateSchema } from "../schemas.js";
+import { catalogQuerySchema, foodSchema, foodUpdateSchema } from "../schemas.js";
 
 export const foodsRouter = Router();
 foodsRouter.use(requireUser);
@@ -32,6 +32,26 @@ foodsRouter.get(
       take: 60,
     });
     res.json({ foods: pickSearchResults(rows, user.id, 20).map((food) => presentFood(food, user.id)) });
+  }),
+);
+
+// Must stay above "/:id" or "catalog" would be read as a food id.
+foodsRouter.get(
+  "/catalog",
+  requirePermission("foods:read"),
+  asyncRoute(async (req, res) => {
+    const user = currentUser(res);
+    const query = catalogQuerySchema.parse(req.query);
+    const rows = await prisma.food.findMany({
+      where: catalogWhere(user.id, query),
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      skip: query.offset,
+      take: CATALOG_PAGE_SIZE + 1,
+    });
+    res.json({
+      foods: rows.slice(0, CATALOG_PAGE_SIZE).map((food) => presentFood(food, user.id)),
+      hasMore: rows.length > CATALOG_PAGE_SIZE,
+    });
   }),
 );
 

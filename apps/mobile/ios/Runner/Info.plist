@@ -50,7 +50,9 @@
 	<key>NSHealthShareUsageDescription</key>
 	<string>Drop It reads your weight, steps, exercise minutes, and active calories from Apple Health to show them next to your food log and count active calories toward your daily calorie goal.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Drop It uses the camera to scan food barcodes.</string>
+	<string>Drop It uses the camera to scan food barcodes and nutrition labels.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Drop It reads a photo you choose to extract the values from a nutrition label.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
