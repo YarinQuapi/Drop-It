@@ -4058,11 +4058,14 @@ class _FoodScreenState extends State<FoodScreen> {
   final scanned = <TextEditingController>{};
   bool scannedFromServing = false;
   String scannedText = '';
+  NutritionScan? lastScan;
 
   Future<void> scanLabel() async {
     final scan = await Navigator.push<NutritionScan>(
       context,
-      MaterialPageRoute(builder: (_) => NutritionScanScreen(t: widget.t)),
+      MaterialPageRoute(
+        builder: (_) => NutritionScanScreen(api: widget.api, t: widget.t),
+      ),
     );
     if (scan == null) return;
     String text(num? v) => v == null ? '' : _plainNumber(v);
@@ -4084,6 +4087,7 @@ class _FoodScreenState extends State<FoodScreen> {
       basis = scan.liquid ? 'liquid' : 'solid';
       scannedFromServing = scan.fromServing;
       scannedText = scan.raw;
+      lastScan = scan;
     });
   }
 
@@ -4137,6 +4141,14 @@ class _FoodScreenState extends State<FoodScreen> {
                   ),
                 ),
                 child: Text(t.showScannedText),
+              ),
+            ),
+          if (lastScan != null)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: () => reportBadScan(context, widget.api, t, lastScan!),
+                child: Text(t.reportScan),
               ),
             ),
           if (scannedFromServing)

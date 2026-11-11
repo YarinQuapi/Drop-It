@@ -228,4 +228,15 @@ Nutrition Information per 100g
     expect(scan.sugars, 2.8);
     expect(scan.protein, 4);
   });
+
+  test('a scan keeps its photo and exports its values for a report', () {
+    final scan = parseNutritionText('Per 100 g\nEnergy 120 kcal\nProtein 8 g')
+        .withRaw('text')
+        .withPhoto('/tmp/label.png');
+    expect(scan.photo, '/tmp/label.png');
+    expect(scan.raw, 'text');
+    expect(scan.toJson()['calories'], 120);
+    expect(scan.toJson()['protein'], 8);
+    expect(scan.toJson()['fat'], isNull);
+  });
 }

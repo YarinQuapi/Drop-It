@@ -87,6 +87,7 @@ model User {
   fastingSessions FastingSession[]
   healthSettings  HealthSettings?
   healthDays      HealthDay[]
+  scanReports     ScanReport[]
 }
 
 model Session {
@@ -242,4 +243,21 @@ model FastingSession {
   createdAt   DateTime  @default(now())
 
   @@index([userId, startedAt])
+}
+
+// A label scan the user flagged as wrong. Kept so real failures can become
+// parser tests (see `npm run export-scan-reports`).
+model ScanReport {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photo      Bytes
+  rawText    String    @db.Text
+  parsed     Json
+  note       String    @default("") @db.VarChar(500)
+  language   String    @db.VarChar(8)
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([resolvedAt, createdAt])
 }
