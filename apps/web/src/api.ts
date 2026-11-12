@@ -79,6 +79,19 @@ export type Nutrients = {
   sodium: number;
 };
 
+export type FoodSuggestion = {
+  barcode: string;
+  name: string;
+  basis: "solid" | "liquid";
+  calories: number;
+  protein: number;
+  carbohydrates: number;
+  fat: number;
+  fiber: number;
+  sugars: number;
+  sodium: number;
+};
+
 export type Food = Nutrients & {
   id: string;
   barcode: string | null;

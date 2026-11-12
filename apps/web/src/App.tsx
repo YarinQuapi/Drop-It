@@ -13,6 +13,7 @@ import {
   type FastingState,
   type FastNotification,
   type Food,
+  type FoodSuggestion,
   type ReminderOffset,
   MEALS,
   type MealCategory,
@@ -611,7 +612,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Food[] | null>(null);
   const [recent, setRecent] = useState<RecentFood[]>([]);
-  const [lookup, setLookup] = useState<{ status: string; food: Food | null; foods: Food[] } | null>(null);
+  const [lookup, setLookup] = useState<{ status: string; food: Food | null; foods: Food[]; suggestion?: FoodSuggestion | null } | null>(null);
   const [picked, setPicked] = useState<Food | null>(null);
   const [amount, setAmount] = useState("100");
   const [error, setError] = useState("");
@@ -720,7 +721,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
       return;
     }
     try {
-      const result = await api<{ status: string; food: Food | null; foods: Food[] }>(`/api/foods/barcode/${encodeURIComponent(trimmedQuery)}`);
+      const result = await api<{ status: string; food: Food | null; foods: Food[]; suggestion?: FoodSuggestion | null }>(`/api/foods/barcode/${encodeURIComponent(trimmedQuery)}`);
       setLookup(result);
       if (result.food) pick(result.food);
     } catch (err) {
@@ -744,6 +745,12 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
     } catch (err) {
       setError(message(t, err));
     }
+  }
+
+  function suggestionLink(meal: MealCategory, suggestion: FoodSuggestion) {
+    const search = new URLSearchParams({ meal, source: "online" });
+    for (const [key, value] of Object.entries(suggestion)) search.set(key, String(value));
+    return `/foods/new?${search}`;
   }
 
   function newFoodLink(meal: MealCategory) {
@@ -905,6 +912,12 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
                 )}
                 {lookup?.status === "none" && (
                   <p>{t.noFood} <Link to={newFoodLink(meal)}>{t.createFood}</Link></p>
+                )}
+                {lookup?.status === "external" && lookup.suggestion && (
+                  <p>
+                    {t.foundOnline}: <strong>{lookup.suggestion.name}</strong>{" "}
+                    <Link to={suggestionLink(meal, lookup.suggestion)}>{t.reviewAndSave}</Link>
+                  </p>
                 )}
                 {lookup?.status === "list" && (
                   <div className="food-list">
@@ -1870,21 +1883,22 @@ function FoodForm() {
   return (
     <Form className="card" onSubmit={save} key={food?.id ?? "new"}>
       <h1>{t.createFood}</h1>
+      {!id && params.get("source") === "online" && <p className="muted">{t.onlineValues}</p>}
       {!id && <label><span>{t.barcode}</span><input name="barcode" defaultValue={barcode} placeholder={t.optional} inputMode="numeric" /></label>}
       <label><span>{t.name}</span><input name="name" defaultValue={food?.name ?? (id ? undefined : params.get("name") ?? undefined)} required /></label>
       <MenuField
         name="basis"
         label={t.measuredAs}
-        defaultValue={food?.basis ?? "solid"}
+        defaultValue={food?.basis ?? (params.get("basis") === "liquid" ? "liquid" : "solid")}
         options={[
           { value: "solid", label: t.solid },
           { value: "liquid", label: t.liquid },
         ]}
       />
-      <label><span>{t.calories}</span><input name="calories" defaultValue={food?.calories} placeholder="0" inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
+      <label><span>{t.calories}</span><input name="calories" defaultValue={food?.calories ?? (id ? undefined : params.get("calories") ?? undefined)} placeholder="0" inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
       <div className="nutrient-grid">
         {(["protein", "carbohydrates", "fat", "fiber", "sugars", "sodium"] as const).map((field) => (
-          <label key={field}><span>{t[field]}</span><input name={field} defaultValue={food?.[field]} placeholder={t.optional} inputMode="decimal" pattern="\d+([.,]\d+)?" /></label>
+          <label key={field}><span>{t[field]}</span><input name={field} defaultValue={food?.[field] ?? (id ? undefined : params.get(field) ?? undefined)} placeholder={t.optional} inputMode="decimal" pattern="\d+([.,]\d+)?" /></label>
         ))}
       </div>
       {error && <p className="error">{error}</p>}

@@ -3,6 +3,7 @@ import { currentUser, requireUser } from "../auth.js";
 import { prisma } from "../db.js";
 import { resolveBarcode } from "../domain.js";
 import { asyncRoute, HttpError } from "../http.js";
+import { lookupOpenFoodFacts } from "../open-food-facts.js";
 import { CATALOG_PAGE_SIZE, catalogWhere, pickRecentFoods, pickSearchResults } from "../food-search.js";
 import { num, presentFood } from "../present.js";
 import { requirePermission } from "../rbac.js";
@@ -112,10 +113,13 @@ foodsRouter.get(
     const published = rows.filter((food) => food.published && food.ownerId !== user.id);
     const verified = published.find((food) => food.verifiedAt != null) ?? null;
     const decision = resolveBarcode({ own, verified, published });
+    // Not in our catalog: offer Open Food Facts values to prefill a new food. Nothing is saved here.
+    const suggestion = decision.status === "none" ? await lookupOpenFoodFacts(barcode) : null;
     res.json({
-      status: decision.status,
+      status: suggestion ? "external" : decision.status,
       food: decision.food ? presentFood(decision.food, user.id) : null,
       foods: decision.foods.map((food) => presentFood(food, user.id)),
+      suggestion,
     });
   }),
 );
