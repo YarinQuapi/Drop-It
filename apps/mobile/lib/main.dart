@@ -1366,11 +1366,18 @@ class _TodayScreenState extends State<TodayScreen> {
     if (!mounted) return;
     Map<String, dynamic>? food = (result['food'] as Map?)
         ?.cast<String, dynamic>();
-    if (result['status'] == 'none') {
+    if (result['status'] == 'none' || result['status'] == 'external') {
+      final suggestion = (result['suggestion'] as Map?)
+          ?.cast<String, dynamic>();
       food = await Navigator.push<Map<String, dynamic>>(
         context,
         MaterialPageRoute(
-          builder: (_) => FoodScreen(api: widget.api, t: t, barcode: barcode),
+          builder: (_) => FoodScreen(
+            api: widget.api,
+            t: t,
+            barcode: barcode,
+            suggestion: suggestion,
+          ),
         ),
       );
     } else if (result['status'] == 'list') {
@@ -4034,9 +4041,13 @@ class FoodScreen extends StatefulWidget {
     required this.t,
     this.barcode,
     this.initialName,
+    this.suggestion,
   });
   final Api api;
   final Copy t;
+
+  /// Open Food Facts values for the barcode, to prefill (and flag for review).
+  final Map<String, dynamic>? suggestion;
 
   /// Known when the food was scanned; otherwise the user types it.
   final String? barcode;
@@ -4047,18 +4058,29 @@ class FoodScreen extends StatefulWidget {
 }
 
 class _FoodScreenState extends State<FoodScreen> {
-  late final name = TextEditingController(text: widget.initialName ?? '');
+  late final name = TextEditingController(
+    text: (widget.suggestion?['name'] as String?) ?? widget.initialName ?? '',
+  );
   late final barcode = TextEditingController(text: widget.barcode ?? '');
-  String basis = 'solid';
-  final calories = TextEditingController();
-  final protein = TextEditingController();
-  final carbohydrates = TextEditingController();
-  final fat = TextEditingController();
-  final fiber = TextEditingController();
-  final sugars = TextEditingController();
-  final sodium = TextEditingController();
+  late String basis = widget.suggestion?['basis'] == 'liquid' ? 'liquid' : 'solid';
+  late final calories = _prefilled('calories');
+  late final protein = _prefilled('protein');
+  late final carbohydrates = _prefilled('carbohydrates');
+  late final fat = _prefilled('fat');
+  late final fiber = _prefilled('fiber');
+  late final sugars = _prefilled('sugars');
+  late final sodium = _prefilled('sodium');
   String error = '';
-  final scanned = <TextEditingController>{};
+  late final scanned = <TextEditingController>{
+    if (widget.suggestion != null)
+      for (final c in [calories, protein, carbohydrates, fat, fiber, sugars, sodium])
+        if (c.text.isNotEmpty) c,
+  };
+
+  TextEditingController _prefilled(String key) {
+    final value = widget.suggestion?[key];
+    return TextEditingController(text: value is num ? _plainNumber(value) : '');
+  }
   bool scannedFromServing = false;
   String scannedText = '';
   NutritionScan? lastScan;
@@ -4122,6 +4144,11 @@ class _FoodScreenState extends State<FoodScreen> {
               label: Text(t.scanLabel),
             ),
           ),
+          if (widget.suggestion != null)
+            Text(
+              t.onlineValues,
+              style: TextStyle(color: context.apple.labelSecondary),
+            ),
           if (scannedText.isNotEmpty)
             Align(
               alignment: AlignmentDirectional.centerStart,

@@ -7,7 +7,7 @@ Ideas for improving Drop It, to revisit. Roughly in priority order.
    Real failures become parser tests (like the Pringles one) and a test set
    builds up over time. Liquid / per-100 ml labels still fail.
 
-2. **Auto-fill foods from a barcode database**
+2. **Auto-fill foods from a barcode database** (done: API falls back to Open Food Facts, clients prefill the form)
    Look the barcode up in Open Food Facts (good Israeli coverage) before asking
    for a label photo. The label scanner becomes the fallback. Also seeds the
    catalog.

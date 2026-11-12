@@ -237,6 +237,10 @@ class Copy {
   String get catalogLoadMore => pick('Load more', 'טען עוד');
   String get catalogPrivate => pick('Private', 'פרטי');
   String get chooseFood => pick('Choose a published food', 'בחירת מזון שפורסם');
+  String get onlineValues => pick(
+    'Values from Open Food Facts (per 100 g / 100 ml) – please check them before saving.',
+    'הערכים מ-Open Food Facts (ל-100 גרם / 100 מ״ל) – נא לבדוק אותם לפני השמירה.',
+  );
   String get noFood => pick(
     'This barcode is not in the database yet.',
     'הברקוד הזה עדיין לא במאגר.',
