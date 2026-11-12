@@ -331,6 +331,29 @@ class Copy {
   );
   String get reminderDone =>
       pick('Your fast timer is complete', 'טיימר הצום הסתיים');
+  String get fastEndReminder =>
+      pick('Notify me when my fast ends', 'הודע לי כשהצום מסתיים');
+  String get fastEndReminderHint => pick(
+    'A notification when your fasting timer completes',
+    'התראה כשטיימר הצום מסתיים',
+  );
+  String get fastEndedNotification => pick(
+    'Your fast is complete. Time to eat!',
+    'הצום הסתיים. הגיע הזמן לאכול!',
+  );
+  String get notificationsDenied => pick(
+    'Notifications are turned off for Drop It in iOS Settings.',
+    'ההתראות כבויות עבור Drop It בהגדרות iOS.',
+  );
+  String get widgetCalories => pick('Calories', 'קלוריות');
+  String get widgetKcalLeft => pick('kcal left', 'קק״ל נותרו');
+  String get widgetKcalOver => pick('kcal over', 'קק״ל מעל');
+  String get widgetFastLeft => pick('left', 'נותרו');
+  String get widgetFastDone => pick('Fast complete', 'הצום הסתיים');
+  String get widgetFastOff => pick('Fasting off', 'צום כבוי');
+  String get widgetFastWindow => pick('Fasting window', 'חלון צום');
+  String get widgetFastTitle => pick('Fasting', 'צום');
+  String get widgetSignedOut => pick('Open Drop It to sign in', 'פתח את Drop It להתחברות');
   String get previousWeek => pick('Previous week', 'השבוע הקודם');
   String get nextWeek => pick('Next week', 'השבוע הבא');
   String get sedentary => pick('Sedentary', 'יושבני');

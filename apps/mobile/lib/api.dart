@@ -95,6 +95,33 @@ class Api {
     } catch (_) {}
   }
 
+  Future<File> _prefsFile() async {
+    final dir = await getApplicationSupportDirectory();
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return File('${dir.path}/prefs.json');
+  }
+
+  /// Local-only toggle: notify when a fast ends. Defaults to off.
+  Future<bool> loadFastEndReminder() async {
+    try {
+      final file = await _prefsFile();
+      if (await file.exists()) {
+        final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+        return data['fastEndReminder'] == true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<void> saveFastEndReminder(bool value) async {
+    try {
+      final file = await _prefsFile();
+      await file.writeAsString(jsonEncode({'fastEndReminder': value}), flush: true);
+    } catch (_) {}
+  }
+
   Future<void> loadToken() async {
     try {
       token = await _storage.read(key: 'token');
