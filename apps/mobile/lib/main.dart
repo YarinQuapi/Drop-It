@@ -1285,10 +1285,13 @@ class _TodayScreenState extends State<TodayScreen> {
               await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => FastingScreen(
-                    api: widget.api,
-                    t: t,
-                    sync: widget.sync,
+                  builder: (_) => Scaffold(
+                    appBar: AppBar(title: Text(t.fastingTab)),
+                    body: FastingScreen(
+                      api: widget.api,
+                      t: t,
+                      sync: widget.sync,
+                    ),
                   ),
                 ),
               );
