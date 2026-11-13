@@ -475,12 +475,15 @@ function AuthPage({ mode, onAuth }: { mode: "login" | "signup"; onAuth: (me: Me)
   );
 }
 
-/** App mark: a drop with a ring segment, drawn with the accent token. */
+/** App mark: the "step down" logo, vector so it stays crisp at any size. */
 function AppMark() {
   return (
-    <svg className="app-mark" viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">
-      <rect width="48" height="48" rx="12" fill="var(--accent-primary)" />
-      <path d="M24 10c5.5 7 9 11.6 9 16.2A9 9 0 0 1 15 26.2C15 21.6 18.5 17 24 10Z" fill="var(--fast-on)" />
+    <svg className="app-mark" viewBox="0 0 100 100" width="56" height="56" aria-hidden="true">
+      <rect width="100" height="100" rx="22" fill="#7CC6FF" />
+      <rect x="13" y="24" width="14" height="52" rx="7" fill="#10131A" />
+      <rect x="33" y="40" width="14" height="36" rx="7" fill="#10131A" />
+      <rect x="53" y="55" width="14" height="21" rx="7" fill="#10131A" />
+      <circle cx="80" cy="69" r="7" fill="#10131A" />
     </svg>
   );
 }

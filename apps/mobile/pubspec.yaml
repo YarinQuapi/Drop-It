@@ -46,6 +46,7 @@ dependencies:
     path: packages/flutter_tesseract_ocr
   image_picker: ^1.2.4
   image: ^4.12.0
+  flutter_svg: ^2.0.10
 
 dev_dependencies:
   flutter_test:
@@ -70,6 +71,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/logo.svg
     - assets/tessdata_config.json
     - assets/tessdata/
 

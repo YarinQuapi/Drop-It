@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -513,27 +514,14 @@ class DirectionalChevron extends StatelessWidget {
   }
 }
 
-/// App mark: a drop on the accent tile.
+/// App mark: the "step down" logo, rendered from the vector asset.
 class AppMark extends StatelessWidget {
   const AppMark({super.key, this.size = 56});
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    final apple = context.apple;
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: apple.accentPrimary,
-        borderRadius: BorderRadius.circular(size * 0.25),
-      ),
-      child: Icon(
-        CupertinoIcons.drop_fill,
-        color: Theme.of(context).colorScheme.onPrimary,
-        size: size * 0.55,
-      ),
-    );
+    return SvgPicture.asset('assets/logo.svg', width: size, height: size);
   }
 }
 
