@@ -1215,7 +1215,7 @@ button.icon-button:disabled { opacity: 0.35; }
 main.shell.auth-page { padding-top: calc(var(--gap-xl) + env(safe-area-inset-top)); }
 .auth-brand { display: grid; justify-items: center; gap: 2px; margin-bottom: var(--gap-xl); text-align: center; }
 .auth-brand strong { margin-top: var(--gap-sm); font-size: 1.5rem; letter-spacing: -0.02em; }
-.app-mark { border-radius: 12px; box-shadow: var(--control-shadow); }
+.app-mark { border-radius: 22%; box-shadow: var(--control-shadow); }
 .auth-card { width: 100%; }
 .auth-card button[type="submit"] { width: 100%; }
 .auth-lang { width: 100%; max-width: 240px; }
