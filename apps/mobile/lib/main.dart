@@ -20,6 +20,7 @@ import 'nutrition_parser.dart';
 import 'nutrition_scan.dart';
 import 'reminders.dart';
 import 'theme.dart';
+import 'widget_sync.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,6 +38,7 @@ class _DropItAppState extends State<DropItApp> with WidgetsBindingObserver {
   final Api api = Api();
   late final AppleHealth health = AppleHealth(api);
   final Reminders reminders = Reminders();
+  final WidgetSync widgetSync = WidgetSync();
   Map<String, dynamic>? me;
   bool loading = true;
   String lang = 'en';
@@ -83,6 +85,7 @@ class _DropItAppState extends State<DropItApp> with WidgetsBindingObserver {
     try {
       await reminders.init();
     } catch (_) {}
+    await widgetSync.init();
     await api.loadToken();
     if (api.token != null) {
       final cachedMe = await api.loadCachedMe();
@@ -110,9 +113,14 @@ class _DropItAppState extends State<DropItApp> with WidgetsBindingObserver {
   }
 
   Future<void> syncReminders() async {
-    if (api.token == null) return;
+    if (api.token == null) {
+      await widgetSync.update(t: t, signedIn: false);
+      await reminders.cancelFastEnd();
+      return;
+    }
+    Map<String, dynamic>? fasting;
     try {
-      final fasting = await api.send('GET', '/api/fasting');
+      fasting = await api.send('GET', '/api/fasting');
       final notifications =
           ((fasting['notifications'] as List?) ?? const [])
               .whereType<Map>()
@@ -129,6 +137,38 @@ class _DropItAppState extends State<DropItApp> with WidgetsBindingObserver {
         ),
       );
     } catch (_) {}
+    try {
+      await _syncFastEnd(fasting);
+    } catch (_) {}
+    Map<String, dynamic>? day;
+    try {
+      day = await api.send('GET', '/api/days/today');
+    } catch (_) {}
+    // Keep the last known values when the network is unavailable.
+    if (fasting != null || day != null) {
+      await widgetSync.update(
+        t: t,
+        signedIn: true,
+        fasting: fasting,
+        day: day,
+      );
+    }
+  }
+
+  /// Schedules (or cancels) the optional "fast ended" notification.
+  Future<void> _syncFastEnd(Map<String, dynamic>? fasting) async {
+    if (fasting == null) return;
+    final endsAt = fasting['endsAt'] as String?;
+    if (!await api.loadFastEndReminder() ||
+        fasting['running'] != true ||
+        endsAt == null) {
+      await reminders.cancelFastEnd();
+      return;
+    }
+    await reminders.scheduleFastEnd(
+      endsAt: DateTime.parse(endsAt),
+      body: t.fastEndedNotification,
+    );
   }
 
   Future<void> afterAuth(Map<String, dynamic> auth) async {
@@ -203,10 +243,12 @@ class _DropItAppState extends State<DropItApp> with WidgetsBindingObserver {
                     } catch (_) {}
                     await AppleHealth.stopLocal();
                     await api.setToken(null);
+                    await syncReminders();
                     setState(() => me = null);
                   },
                   health: health,
                   sync: syncReminders,
+                  requestNotifications: reminders.requestPermission,
                 ),
         ),
       ),
@@ -834,6 +876,7 @@ class HomeScreen extends StatefulWidget {
     required this.onLogout,
     required this.health,
     required this.sync,
+    required this.requestNotifications,
   });
   final Api api;
   final Copy t;
@@ -844,6 +887,7 @@ class HomeScreen extends StatefulWidget {
   final Future<void> Function() onLogout;
   final AppleHealth health;
   final Future<void> Function() sync;
+  final Future<bool> Function() requestNotifications;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -920,6 +964,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onMe: widget.onMe,
           health: widget.health,
           sync: widget.sync,
+          requestNotifications: widget.requestNotifications,
           onLogout: widget.onLogout,
           isAdmin: isAdmin,
         ),
@@ -1020,6 +1065,7 @@ class _TodayScreenState extends State<TodayScreen> {
           }
           hiddenEntries.remove(id);
           if (mounted) await load();
+          await widget.sync();
         });
   }
 
@@ -2765,6 +2811,7 @@ class SettingsScreen extends StatefulWidget {
     required this.sync,
     required this.onLogout,
     this.isAdmin = false,
+    required this.requestNotifications,
   });
   final Api api;
   final Copy t;
@@ -2776,6 +2823,7 @@ class SettingsScreen extends StatefulWidget {
   final Future<void> Function() sync;
   final Future<void> Function() onLogout;
   final bool isAdmin;
+  final Future<bool> Function() requestNotifications;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -2796,6 +2844,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String healthError = '';
   bool healthBusy = false;
   bool autoPublish = false;
+  bool fastEndReminder = false;
+  bool notificationsDenied = false;
 
   List get _permissions => (widget.me['permissions'] as List?) ?? const [];
   bool get _canReadHealth => _permissions.contains('appleHealth:read');
@@ -2988,6 +3038,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     autoPublish = widget.me['user']['autoPublishFoods'] == true;
+    unawaited(widget.api.loadFastEndReminder().then((value) {
+      if (mounted) setState(() => fastEndReminder = value);
+    }));
     unawaited(load());
     unawaited(loadHealth());
   }
@@ -3342,6 +3395,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'autoPublishFoods': value,
                       },
                     );
+                  },
+                ),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(t.fastEndReminder),
+                  subtitle: Text(
+                    notificationsDenied
+                        ? t.notificationsDenied
+                        : t.fastEndReminderHint,
+                    style: TextStyle(
+                      color: notificationsDenied
+                          ? apple.accentDangerText
+                          : apple.labelSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  value: fastEndReminder,
+                  onChanged: (value) async {
+                    var granted = true;
+                    if (value) granted = await widget.requestNotifications();
+                    await widget.api.saveFastEndReminder(value && granted);
+                    if (!mounted) return;
+                    setState(() {
+                      notificationsDenied = value && !granted;
+                      fastEndReminder = value && granted;
+                    });
+                    await widget.sync();
                   },
                 ),
               ],
