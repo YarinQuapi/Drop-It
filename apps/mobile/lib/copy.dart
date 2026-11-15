@@ -210,6 +210,12 @@ class Copy {
   String get amount => pick('Amount', 'כמות');
   String get add => pick('Add', 'הוספה');
   String get createFood => pick('New food', 'מזון חדש');
+  String get editFood => pick('Edit food', 'עריכת מזון');
+  String get deleteFood => pick('Delete food', 'מחיקת מזון');
+  String get deleteFoodConfirm => pick(
+    'Delete this food? Days you already logged keep their entries.',
+    'למחוק את המזון? רישומים מימים קודמים יישארו.',
+  );
   String get name => pick('Name', 'שם');
   String get solid => pick('Solid, per 100 g', 'מוצק, ל־100 גרם');
   String get liquid => pick('Liquid, per 100 ml', 'נוזל, ל־100 מ״ל');
@@ -440,6 +446,7 @@ class Copy {
     'foods:read' => pick('Search & view foods', 'חיפוש וצפייה במזונות'),
     'foods:create' => pick('Create new foods', 'יצירת מזונות חדשים'),
     'foods:update' => pick('Edit foods', 'עריכת מזונות'),
+    'foods:delete' => pick('Delete own foods', 'מחיקת מזונות שיצרתי'),
     'foods:publish' => pick(
       'Publish & unpublish foods',
       'פרסום והפסקת שיתוף מזונות',

@@ -225,6 +225,15 @@ function CatalogPage({ canVerifyFoods }: { canVerifyFoods: boolean }) {
     }
   }
 
+  async function togglePublished(food: Food) {
+    try {
+      const res = await api<{ food: Food }>(`/api/foods/${food.id}/${food.published ? "unpublish" : "publish"}`, { method: "POST" });
+      setFoods((current) => (current ?? []).map((item) => (item.id === food.id ? res.food : item)));
+    } catch (err) {
+      setError(message(t, err));
+    }
+  }
+
   return (
     <>
       <h1>{t.foodCatalog}</h1>
@@ -276,6 +285,16 @@ function CatalogPage({ canVerifyFoods }: { canVerifyFoods: boolean }) {
                         <button type="button" onClick={() => verify(food)}>{t.verify}</button>
                       )}
                       {food.owned && <Link className="secondary" to={`/foods/${food.id}`}>{t.edit}</Link>}
+                      {food.owned && (
+                        <button type="button" className="secondary" onClick={() => togglePublished(food)}>{food.published ? t.unpublish : t.publish}</button>
+                      )}
+                      {food.owned && (
+                        <DeleteFoodButton
+                          foodId={food.id}
+                          onDeleted={() => setFoods((current) => (current ?? []).filter((item) => item.id !== food.id))}
+                          onError={setError}
+                        />
+                      )}
                     </div>
                   </div>
                 )}
@@ -286,6 +305,35 @@ function CatalogPage({ canVerifyFoods }: { canVerifyFoods: boolean }) {
       )}
       {hasMore && <button type="button" className="secondary" disabled={loadingMore} onClick={loadMore}>{t.catalogLoadMore}</button>}
     </>
+  );
+}
+
+/** Deleting a food cannot be undone, so it takes a second, explicit tap. */
+function DeleteFoodButton({ foodId, onDeleted, onError }: { foodId: string; onDeleted: () => void; onError: (text: string) => void }) {
+  const { t } = useI18n();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!confirming) {
+    return <button type="button" className="quiet" onClick={() => setConfirming(true)}>{t.deleteFood}</button>;
+  }
+  return (
+    <div className="confirm-row" role="group" aria-label={t.deleteFood}>
+      <p className="muted">{t.deleteFoodConfirm}</p>
+      <div className="fast-actions">
+        <button type="button" className="danger" disabled={busy} onClick={async () => {
+          setBusy(true);
+          try {
+            await api(`/api/foods/${foodId}`, { method: "DELETE" });
+            onDeleted();
+          } catch (err) {
+            setBusy(false);
+            setConfirming(false);
+            onError(message(t, err));
+          }
+        }}>{t.deleteFood}</button>
+        <button type="button" className="secondary" disabled={busy} onClick={() => setConfirming(false)}>{t.cancel}</button>
+      </div>
+    </div>
   );
 }
 
@@ -406,7 +454,9 @@ function AuthPage({ mode, onAuth }: { mode: "login" | "signup"; onAuth: (me: Me)
         <strong>{t.appName}</strong>
         <span className="muted">{t.tagline}</span>
       </div>
-      <Form className="card auth-card" onSubmit={submit}>
+      {/* An error describes the values that were submitted: drop it once they change. The browser
+          blocks submitting a too-short password itself, so submit() can't be relied on to clear it. */}
+      <Form className="card auth-card" onSubmit={submit} onChange={() => setError("")}>
         <h1>{mode === "login" ? t.login : t.signup}</h1>
         {apple?.enabled && (
           <>
@@ -1878,14 +1928,15 @@ function FoodForm() {
       } else {
         saved = (await api<{ food: Food }>("/api/foods", { method: "POST", body: JSON.stringify(body) })).food;
       }
-      navigate(mealToReturn ? `/?meal=${mealToReturn}&food=${encodeURIComponent(saved.id)}` : "/");
+      // Editing without a meal to return to was opened from the catalog.
+      navigate(mealToReturn ? `/?meal=${mealToReturn}&food=${encodeURIComponent(saved.id)}` : id ? "/catalog" : "/");
     } catch (err) {
       setError(message(t, err));
     }
   }
   return (
     <Form className="card" onSubmit={save} key={food?.id ?? "new"}>
-      <h1>{t.createFood}</h1>
+      <h1>{id ? t.editFood : t.createFood}</h1>
       {!id && params.get("source") === "online" && <p className="muted">{t.onlineValues}</p>}
       {!id && <label><span>{t.barcode}</span><input name="barcode" defaultValue={barcode} placeholder={t.optional} inputMode="numeric" /></label>}
       <label><span>{t.name}</span><input name="name" defaultValue={food?.name ?? (id ? undefined : params.get("name") ?? undefined)} required /></label>
@@ -1908,9 +1959,16 @@ function FoodForm() {
       <button type="submit">{t.save}</button>
       {id && food?.owned && (
         <button type="button" className="secondary" onClick={async () => {
-          await api(`/api/foods/${id}/${food.published ? "unpublish" : "publish"}`, { method: "POST" });
-          setFood({ ...food, published: !food.published });
+          try {
+            const result = await api<{ food: Food }>(`/api/foods/${id}/${food.published ? "unpublish" : "publish"}`, { method: "POST" });
+            setFood(result.food);
+          } catch (err) {
+            setError(message(t, err));
+          }
         }}>{food.published ? t.unpublish : t.publish}</button>
+      )}
+      {id && food?.owned && (
+        <DeleteFoodButton foodId={id} onDeleted={() => navigate(mealToReturn ? `/?meal=${mealToReturn}` : "/catalog")} onError={setError} />
       )}
     </Form>
   );
