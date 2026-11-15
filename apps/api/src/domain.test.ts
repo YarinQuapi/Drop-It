@@ -436,7 +436,8 @@ test("password validation requires 8+ English chars, uppercase, number, symbol, 
 });
 
 test("RBAC permission resolution grants all to admins and applies overrides to regular users", () => {
-  assert.equal(OPERATIONS.length, 19);
+  assert.equal(OPERATIONS.length, 20);
+  assert.equal(DEFAULT_USER_PERMISSIONS["foods:delete"], true);
   assert.equal(DEFAULT_USER_PERMISSIONS["appleHealth:read"], true);
   assert.equal(DEFAULT_USER_PERMISSIONS["appleHealth:sync"], true);
   const adminPerms = resolvePermissions(true, [{ operation: "foods:create", allowed: false }]);

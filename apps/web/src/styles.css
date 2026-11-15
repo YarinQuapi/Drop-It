@@ -596,6 +596,8 @@ table.fast-log { width: 100%; border-collapse: collapse; }
 .fast-log tbody tr { transition: background-color 160ms ease; }
 .fast-log tbody tr:hover { background: var(--fill-hover); }
 .fast-actions { display: flex; flex-wrap: wrap; gap: var(--gap-sm); }
+.confirm-row { flex: 1 1 100%; display: grid; gap: var(--gap-sm); }
+.confirm-row p { margin: 0; }
 
 .food-add { display: flex; gap: var(--gap-sm); align-items: center; margin-top: var(--gap-md); }
 .food-add label { flex: 1; margin-top: 0; }

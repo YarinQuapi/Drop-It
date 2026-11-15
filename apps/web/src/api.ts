@@ -112,6 +112,7 @@ export type Operation =
   | "foods:read"
   | "foods:create"
   | "foods:update"
+  | "foods:delete"
   | "foods:publish"
   | "foods:verify"
   | "weeks:read"
@@ -133,6 +134,7 @@ export const OPERATIONS: Operation[] = [
   "foods:read",
   "foods:create",
   "foods:update",
+  "foods:delete",
   "foods:publish",
   "foods:verify",
   "weeks:read",

@@ -334,6 +334,12 @@ class _AuthScreenState extends State<AuthScreen> {
       RegExp(r'[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]').hasMatch(password.text);
   bool get _ruleMatch =>
       password.text.isNotEmpty && password.text == confirmPassword.text;
+  /// Refreshes the password rules, and drops an error about the old values
+  /// (such as "email already registered") once they are edited.
+  void _fieldChanged(String _) {
+    if (signup || error.isNotEmpty) setState(() => error = '');
+  }
+
   bool get _signupValid =>
       _ruleLength &&
       _ruleEnglish &&
@@ -433,6 +439,7 @@ class _AuthScreenState extends State<AuthScreen> {
               textDirection: TextDirection.ltr,
               decoration: InputDecoration(labelText: t.email),
               keyboardType: TextInputType.emailAddress,
+              onChanged: _fieldChanged,
             ),
             TextField(
               controller: password,
@@ -440,9 +447,7 @@ class _AuthScreenState extends State<AuthScreen> {
               textDirection: TextDirection.ltr,
               decoration: InputDecoration(labelText: t.password),
               obscureText: true,
-              onChanged: (_) {
-                if (signup) setState(() {});
-              },
+              onChanged: _fieldChanged,
             ),
             if (signup) ...[
               TextField(
@@ -451,7 +456,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 textDirection: TextDirection.ltr,
                 decoration: InputDecoration(labelText: t.confirmPassword),
                 obscureText: true,
-                onChanged: (_) => setState(() {}),
+                onChanged: _fieldChanged,
               ),
               Card(
                 child: Padding(
@@ -941,6 +946,12 @@ class _HomeScreenState extends State<HomeScreen> {
             context,
             MaterialPageRoute(
               builder: (_) => FoodScreen(api: widget.api, t: t),
+            ),
+          ),
+          onEditFood: (food) => Navigator.push<Map<String, dynamic>>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FoodScreen(api: widget.api, t: t, food: food),
             ),
           ),
         ),
@@ -4110,9 +4121,13 @@ class FoodScreen extends StatefulWidget {
     this.barcode,
     this.initialName,
     this.suggestion,
+    this.food,
   });
   final Api api;
   final Copy t;
+
+  /// An existing food of the user's to edit; null creates a new one.
+  final Map<String, dynamic>? food;
 
   /// Open Food Facts values for the barcode, to prefill (and flag for review).
   final Map<String, dynamic>? suggestion;
@@ -4127,10 +4142,19 @@ class FoodScreen extends StatefulWidget {
 
 class _FoodScreenState extends State<FoodScreen> {
   late final name = TextEditingController(
-    text: (widget.suggestion?['name'] as String?) ?? widget.initialName ?? '',
+    text: (_initial?['name'] as String?) ?? widget.initialName ?? '',
   );
   late final barcode = TextEditingController(text: widget.barcode ?? '');
-  late String basis = widget.suggestion?['basis'] == 'liquid' ? 'liquid' : 'solid';
+  late String basis = _initial?['basis'] == 'liquid' ? 'liquid' : 'solid';
+
+  bool get editing => widget.food != null;
+
+  /// Values to start from: the food being edited, or an online suggestion.
+  Map<String, dynamic>? get _initial => widget.food ?? widget.suggestion;
+
+  /// The barcode is fixed once known (scanned, or the food already exists).
+  String? get fixedBarcode =>
+      editing ? widget.food!['barcode'] as String? : widget.barcode;
   late final calories = _prefilled('calories');
   late final protein = _prefilled('protein');
   late final carbohydrates = _prefilled('carbohydrates');
@@ -4146,7 +4170,7 @@ class _FoodScreenState extends State<FoodScreen> {
   };
 
   TextEditingController _prefilled(String key) {
-    final value = widget.suggestion?[key];
+    final value = _initial?[key];
     return TextEditingController(text: value is num ? _plainNumber(value) : '');
   }
   bool scannedFromServing = false;
@@ -4200,7 +4224,7 @@ class _FoodScreenState extends State<FoodScreen> {
   Widget build(BuildContext context) {
     final t = widget.t;
     return Scaffold(
-      appBar: AppBar(title: Text(t.createFood)),
+      appBar: AppBar(title: Text(editing ? t.editFood : t.createFood)),
       body: AppList(
         gap: Gaps.md,
         children: [
@@ -4254,12 +4278,12 @@ class _FoodScreenState extends State<FoodScreen> {
               t.scannedFromServing,
               style: TextStyle(color: context.apple.labelSecondary),
             ),
-          if (widget.barcode != null)
+          if (fixedBarcode != null)
             Text(
-              '${t.barcode}: ${widget.barcode}',
+              '${t.barcode}: $fixedBarcode',
               style: TextStyle(color: context.apple.labelSecondary),
             )
-          else
+          else if (!editing)
             TextField(
               controller: barcode,
               decoration: InputDecoration(
@@ -4317,10 +4341,10 @@ class _FoodScreenState extends State<FoodScreen> {
                   return;
                 }
                 final created = await widget.api.send(
-                  'POST',
-                  '/api/foods',
+                  editing ? 'PUT' : 'POST',
+                  editing ? '/api/foods/${widget.food!['id']}' : '/api/foods',
                   body: {
-                    'barcode': code.isEmpty ? null : code,
+                    if (!editing) 'barcode': code.isEmpty ? null : code,
                     'name': name.text.trim(),
                     'basis': basis,
                     'calories': values[0],

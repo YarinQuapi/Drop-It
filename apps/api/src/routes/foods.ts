@@ -177,6 +177,17 @@ foodsRouter.put(
   }),
 );
 
+// Diary entries keep their own copy of the name and nutrients, so past days are unaffected.
+foodsRouter.delete(
+  "/:id",
+  requirePermission("foods:delete"),
+  asyncRoute(async (req, res) => {
+    const food = await ownFood(req.params.id, currentUser(res).id);
+    await prisma.food.delete({ where: { id: food.id } });
+    res.json({ ok: true });
+  }),
+);
+
 foodsRouter.post(
   "/:id/publish",
   requirePermission("foods:publish"),

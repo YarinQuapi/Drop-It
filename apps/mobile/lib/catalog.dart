@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
@@ -17,6 +18,7 @@ class CatalogScreen extends StatefulWidget {
     required this.t,
     required this.canVerify,
     required this.onCreateFood,
+    required this.onEditFood,
   });
 
   final Api api;
@@ -25,6 +27,9 @@ class CatalogScreen extends StatefulWidget {
 
   /// Opens the "new food" form; resolves to the created food, or null.
   final Future<Map<String, dynamic>?> Function() onCreateFood;
+
+  /// Opens the form for one of the user's foods; resolves to the saved food, or null.
+  final Future<Map<String, dynamic>?> Function(Map<String, dynamic> food) onEditFood;
 
   @override
   State<CatalogScreen> createState() => _CatalogScreenState();
@@ -125,8 +130,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
     });
   }
 
+  void replaceFood(Map<String, dynamic> updated) {
+    setState(() {
+      foods = [
+        for (final food in foods ?? <Map<String, dynamic>>[])
+          food['id'] == updated['id'] ? updated : food,
+      ];
+    });
+  }
+
   Future<void> showDetail(Map<String, dynamic> food) async {
-    final verified = await showModalBottomSheet<Map<String, dynamic>>(
+    final result = await showModalBottomSheet<_DetailResult>(
       context: context,
       isScrollControlled: true,
       builder: (_) => _FoodDetail(
@@ -134,9 +148,24 @@ class _CatalogScreenState extends State<CatalogScreen> {
         t: t,
         food: food,
         canVerify: widget.canVerify,
+        onChanged: replaceFood,
       ),
     );
-    if (verified != null) applyVerified(verified);
+    if (result == null || !mounted) return;
+    switch (result.action) {
+      case _DetailAction.verified:
+        applyVerified(result.food);
+      case _DetailAction.deleted:
+        setState(() {
+          foods = [
+            for (final item in foods ?? <Map<String, dynamic>>[])
+              if (item['id'] != result.food['id']) item,
+          ];
+        });
+      case _DetailAction.edit:
+        final saved = await widget.onEditFood(result.food);
+        if (saved != null && mounted) replaceFood(saved);
+    }
   }
 
   @override
@@ -273,17 +302,30 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 }
 
+enum _DetailAction { verified, deleted, edit }
+
+/// How the detail sheet closed, and the food it was showing at that moment.
+class _DetailResult {
+  const _DetailResult(this.action, this.food);
+  final _DetailAction action;
+  final Map<String, dynamic> food;
+}
+
 class _FoodDetail extends StatefulWidget {
   const _FoodDetail({
     required this.api,
     required this.t,
     required this.food,
     required this.canVerify,
+    required this.onChanged,
   });
   final Api api;
   final Copy t;
   final Map<String, dynamic> food;
   final bool canVerify;
+
+  /// The food changed while the sheet stays open (published or unpublished).
+  final ValueChanged<Map<String, dynamic>> onChanged;
 
   @override
   State<_FoodDetail> createState() => _FoodDetailState();
@@ -293,6 +335,58 @@ class _FoodDetailState extends State<_FoodDetail> {
   late Map<String, dynamic> food = widget.food;
   String error = '';
   bool busy = false;
+
+  /// Runs one request with the buttons disabled; shows the error if it fails.
+  Future<Map<String, dynamic>?> run(String method, String path) async {
+    setState(() {
+      busy = true;
+      error = '';
+    });
+    try {
+      return await widget.api.send(method, path);
+    } on ApiException catch (err) {
+      if (mounted) setState(() => error = widget.t.error(err.code));
+      return null;
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> togglePublished() async {
+    final action = food['published'] == true ? 'unpublish' : 'publish';
+    final res = await run('POST', '/api/foods/${food['id']}/$action');
+    if (res == null || !mounted) return;
+    final updated = (res['food'] as Map).cast<String, dynamic>();
+    setState(() => food = updated);
+    widget.onChanged(updated);
+  }
+
+  /// Deleting cannot be undone, so it is confirmed first.
+  Future<void> delete() async {
+    final t = widget.t;
+    final confirmed = await showCupertinoModalPopup<bool>(
+      context: context,
+      builder: (sheet) => CupertinoActionSheet(
+        title: Text(food['name'] as String),
+        message: Text(t.deleteFoodConfirm),
+        actions: [
+          CupertinoActionSheetAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(sheet, true),
+            child: Text(t.deleteFood),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(sheet, false),
+          child: Text(t.cancel),
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final res = await run('DELETE', '/api/foods/${food['id']}');
+    if (res == null || !mounted) return;
+    Navigator.pop(context, _DetailResult(_DetailAction.deleted, food));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -352,30 +446,53 @@ class _FoodDetailState extends State<_FoodDetail> {
                   onPressed: busy
                       ? null
                       : () async {
-                          setState(() {
-                            busy = true;
-                            error = '';
-                          });
-                          try {
-                            final res = await widget.api.send(
-                              'POST',
-                              '/api/foods/${food['id']}/verify',
-                            );
-                            final verified =
-                                (res['food'] as Map).cast<String, dynamic>();
-                            if (context.mounted) Navigator.pop(context, verified);
-                          } on ApiException catch (err) {
-                            if (mounted) {
-                              setState(() {
-                                busy = false;
-                                error = t.error(err.code);
-                              });
-                            }
-                          }
+                          final res = await run(
+                            'POST',
+                            '/api/foods/${food['id']}/verify',
+                          );
+                          if (res == null || !context.mounted) return;
+                          Navigator.pop(
+                            context,
+                            _DetailResult(
+                              _DetailAction.verified,
+                              (res['food'] as Map).cast<String, dynamic>(),
+                            ),
+                          );
                         },
                   child: Text(t.verify),
                 ),
               ),
+            if (food['owned'] == true) ...[
+              SizedBox(
+                height: Gaps.hit,
+                child: OutlinedButton(
+                  onPressed: busy
+                      ? null
+                      : () => Navigator.pop(
+                            context,
+                            _DetailResult(_DetailAction.edit, food),
+                          ),
+                  child: Text(t.edit),
+                ),
+              ),
+              SizedBox(
+                height: Gaps.hit,
+                child: OutlinedButton(
+                  onPressed: busy ? null : togglePublished,
+                  child: Text(food['published'] == true ? t.unpublish : t.publish),
+                ),
+              ),
+              SizedBox(
+                height: Gaps.hit,
+                child: TextButton(
+                  onPressed: busy ? null : delete,
+                  style: TextButton.styleFrom(
+                    foregroundColor: apple.accentDangerText,
+                  ),
+                  child: Text(t.deleteFood),
+                ),
+              ),
+            ],
           ],
         ),
       ),
