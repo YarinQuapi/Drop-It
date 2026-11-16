@@ -272,7 +272,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _row(Map<String, dynamic> food, AppleColors apple) {
-    final unit = food['basis'] == 'solid' ? t.grams : t.milliliters;
     final badges = [
       if (food['verified'] == true) t.verified,
       if (food['owned'] == true && food['published'] != true) t.catalogPrivate,
@@ -282,7 +281,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: Gaps.lg),
       title: Text(food['name'] as String, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '${_plain((food['calories'] as num?) ?? 0)} ${t.kcal} / 100 $unit',
+        '${_plain((food['calories'] as num?) ?? 0)} ${t.kcal} ${t.perOf(food)}',
         style: TextStyle(color: apple.labelSecondary),
       ),
       trailing: badges.isEmpty
@@ -392,7 +391,6 @@ class _FoodDetailState extends State<_FoodDetail> {
   Widget build(BuildContext context) {
     final t = widget.t;
     final apple = context.apple;
-    final unit = food['basis'] == 'solid' ? t.grams : t.milliliters;
     final rows = [
       (t.calories, food['calories']),
       (t.protein, food['protein']),
@@ -419,7 +417,7 @@ class _FoodDetailState extends State<_FoodDetail> {
             ),
             Text(
               [
-                '/ 100 $unit',
+                t.perOf(food),
                 if (food['verified'] == true) t.verified,
                 if (food['barcode'] != null) '${t.barcode}: ${food['barcode']}',
               ].join(' · '),

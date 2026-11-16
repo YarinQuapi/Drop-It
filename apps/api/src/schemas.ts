@@ -6,7 +6,7 @@ export const languageSchema = z.enum(["en", "he"]);
 export const sexSchema = z.enum(["male", "female"]);
 export const activitySchema = z.enum(["sedentary", "light", "moderate", "very", "extra"]);
 export const paceSchema = z.enum(["kg025", "kg050", "kg100"]);
-export const basisSchema = z.enum(["solid", "liquid"]);
+export const basisSchema = z.enum(["solid", "liquid", "unit"]);
 export const mealSchema = z.enum(["breakfast", "lunch", "dinner", "snacks"]);
 export const daySchema = z.string().transform((value, ctx) => {
   const day = canonicalDay(value);

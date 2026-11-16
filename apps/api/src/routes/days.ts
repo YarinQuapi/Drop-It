@@ -68,6 +68,7 @@ daysRouter.post(
         sodium: num(food.sodium),
       },
       body.amount,
+      food.basis,
     );
     const entry = await prisma.$transaction(async (tx) => {
       const created = await tx.diaryEntry.create({
@@ -134,7 +135,7 @@ function presentEntry(entry: {
   id: string;
   foodId: string | null;
   name: string;
-  basis: "solid" | "liquid";
+  basis: "solid" | "liquid" | "unit";
   meal: "breakfast" | "lunch" | "dinner" | "snacks";
   amount: { toNumber(): number };
   calories: { toNumber(): number };

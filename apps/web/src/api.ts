@@ -82,7 +82,7 @@ export type Nutrients = {
 export type FoodSuggestion = {
   barcode: string;
   name: string;
-  basis: "solid" | "liquid";
+  basis: "solid" | "liquid" | "unit";
   calories: number;
   protein: number;
   carbohydrates: number;
@@ -96,7 +96,7 @@ export type Food = Nutrients & {
   id: string;
   barcode: string | null;
   name: string;
-  basis: "solid" | "liquid";
+  basis: "solid" | "liquid" | "unit";
   published: boolean;
   verified: boolean;
   owned: boolean;
@@ -178,7 +178,7 @@ export type DayEntry = Nutrients & {
   id: string;
   foodId: string | null;
   name: string;
-  basis: "solid" | "liquid";
+  basis: "solid" | "liquid" | "unit";
   meal: MealCategory;
   amount: number;
 };

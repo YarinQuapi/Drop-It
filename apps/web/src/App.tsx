@@ -262,7 +262,7 @@ function CatalogPage({ canVerifyFoods }: { canVerifyFoods: boolean }) {
                 <button type="button" className="food-row" aria-expanded={open} onClick={() => setExpanded(open ? null : food.id)}>
                   <span className="food-row-name">
                     <strong>{food.name}</strong>
-                    <span className="muted">{food.calories} {t.kcal} / 100 {unitLabel(t, food)}</span>
+                    <span className="muted">{food.calories} {t.kcal} {perLabel(t, food)}</span>
                   </span>
                   <span className="catalog-badges">
                     {food.verified && <span className="chip chip-verified">{t.verified}</span>}
@@ -762,7 +762,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
 
   function pick(food: Food, lastAmount?: number) {
     setPicked(food);
-    setAmount(String(lastAmount ?? 100));
+    setAmount(String(lastAmount ?? (food.basis === "unit" ? 1 : 100)));
     setError("");
   }
 
@@ -917,7 +917,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
               <div className="entry" key={entry.id}>
                 <div>
                   <strong>{entry.name}</strong>
-                  <div className="muted">{entry.amount} {entry.basis === "solid" ? t.grams : t.milliliters}</div>
+                  <div className="muted">{entry.amount} {unitLabel(t, entry)}</div>
                 </div>
                 <div>
                   <span className="kcal">{formatKcal(entry.calories)}</span>
@@ -994,7 +994,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
                 }}
               >
                 <p><strong>{picked.name}</strong>{picked.owned ? ` · ${t.personal}` : ""}{picked.verified ? ` · ${t.verified}` : ""}</p>
-                <p className="muted">{picked.calories} {t.kcal} / 100 {unitLabel(t, picked)}</p>
+                <p className="muted">{picked.calories} {t.kcal} {perLabel(t, picked)}</p>
                 <label><span>{t.amount} ({unitLabel(t, picked)})</span>
                   <div className="amount-field">
                     <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" required autoFocus onFocus={(event) => event.currentTarget.select()} />
@@ -1033,13 +1033,19 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
 type RecentFood = Food & { lastAmount: number };
 
 function unitLabel(t: Copy, food: Pick<Food, "basis">) {
+  if (food.basis === "unit") return t.units;
   return food.basis === "solid" ? t.grams : t.milliliters;
 }
 
-function portionKcal(food: Pick<Food, "calories">, amount: string) {
+/** "/ 100 g" for solid and liquid foods, "/ 1 unit" for unit foods. */
+function perLabel(t: Copy, food: Pick<Food, "basis">) {
+  return food.basis === "unit" ? `/ 1 ${t.unit}` : `/ 100 ${unitLabel(t, food)}`;
+}
+
+function portionKcal(food: Pick<Food, "calories" | "basis">, amount: string) {
   const value = Number(amount.trim().replace(",", "."));
   if (!Number.isFinite(value) || value <= 0) return 0;
-  return Math.round((food.calories * value) / 100);
+  return Math.round(food.basis === "unit" ? food.calories * value : (food.calories * value) / 100);
 }
 
 function FoodRow({ food, detail, onPick }: { food: Food; detail?: string; onPick: () => void }) {
@@ -1049,7 +1055,7 @@ function FoodRow({ food, detail, onPick }: { food: Food; detail?: string; onPick
       <span className="food-row-name">
         <strong>{food.name}</strong>
         <span className="muted">
-          {detail ?? `${food.calories} ${t.kcal} / 100 ${unitLabel(t, food)}`}
+          {detail ?? `${food.calories} ${t.kcal} ${perLabel(t, food)}`}
           {food.verified ? ` · ${t.verified}` : ""}
         </span>
       </span>
@@ -1947,6 +1953,7 @@ function FoodForm() {
         options={[
           { value: "solid", label: t.solid },
           { value: "liquid", label: t.liquid },
+          { value: "unit", label: t.perUnit },
         ]}
       />
       <label><span>{t.calories}</span><input name="calories" defaultValue={food?.calories ?? (id ? undefined : params.get("calories") ?? undefined)} placeholder="0" inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
