@@ -319,6 +319,20 @@ class Copy {
   String get edit => pick('Edit', 'עריכה');
   String get grams => pick('grams', 'גרם');
   String get milliliters => pick('milliliters', 'מיליליטר');
+  String get unitSingular => pick('unit', 'יחידה');
+  String get unitPlural => pick('units', 'יחידות');
+  String get perUnit => pick('Per unit (egg, slice…)', 'ליחידה (ביצה, פרוסה…)');
+
+  /// Measuring unit for a food map: grams, milliliters or units.
+  String unitOf(Map food) => switch (food['basis']) {
+    'unit' => unitPlural,
+    'solid' => grams,
+    _ => milliliters,
+  };
+
+  /// "/ 100 g" for solid and liquid foods, "/ 1 unit" for unit foods.
+  String perOf(Map food) =>
+      food['basis'] == 'unit' ? '/ 1 $unitSingular' : '/ 100 ${unitOf(food)}';
   String get fastReminder => pick('Fast reminder', 'תזכורת צום');
   String get reminderAtStart => pick('At start hour', 'בשעת ההתחלה');
   String get reminder30Before => pick('30 minutes before', '30 דקות לפני');

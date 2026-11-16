@@ -15,7 +15,7 @@ export const PACE_DEFICIT = {
 export type ActivityLevel = keyof typeof ACTIVITY_MULTIPLIER;
 export type WeeklyPace = keyof typeof PACE_DEFICIT;
 export type Sex = "male" | "female";
-export type FoodBasis = "solid" | "liquid";
+export type FoodBasis = "solid" | "liquid" | "unit";
 
 export type Nutrients = {
   calories: number;
@@ -212,8 +212,9 @@ export function weightForGoal(input: {
   return before[0].weightKg;
 }
 
-export function scaleNutrients(per100: Nutrients, amount: number): Nutrients {
-  const factor = amount / 100;
+/** Solid and liquid foods store nutrients per 100 g / 100 ml; unit foods store them per 1 unit. */
+export function scaleNutrients(per100: Nutrients, amount: number, basis: FoodBasis = "solid"): Nutrients {
+  const factor = basis === "unit" ? amount : amount / 100;
   return {
     calories: round2(per100.calories * factor),
     protein: round2(per100.protein * factor),

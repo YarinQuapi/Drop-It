@@ -203,6 +203,16 @@ test("nutrients scale from the per-100 amount", () => {
   );
 });
 
+test("unit foods scale per unit, not per 100", () => {
+  const base = { calories: 70, protein: 6, carbohydrates: 0.5, fat: 5, fiber: 0, sugars: 0.5, sodium: 70 };
+  assert.deepEqual(
+    scaleNutrients(base, 2, "unit"),
+    { calories: 140, protein: 12, carbohydrates: 1, fat: 10, fiber: 0, sugars: 1, sodium: 140 },
+  );
+  assert.equal(scaleNutrients(base, 0.5, "unit").calories, 35);
+  assert.equal(scaleNutrients(base, 100, "liquid").calories, 70);
+});
+
 test("a day succeeds only when food was logged and calories are at or under the goal", () => {
   assert.equal(daySucceeded({ entryCount: 0, calories: 0, goalKcal: 1800, future: false }), false);
   assert.equal(daySucceeded({ entryCount: 1, calories: 1800, goalKcal: 1800, future: false }), true);

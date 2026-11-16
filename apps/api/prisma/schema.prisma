@@ -37,6 +37,7 @@ enum WeeklyPace {
 enum FoodBasis {
   solid
   liquid
+  unit
 }
 
 enum MealCategory {

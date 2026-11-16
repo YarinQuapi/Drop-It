@@ -1462,7 +1462,7 @@ class _TodayScreenState extends State<TodayScreen> {
         t: t,
         food: food,
         admin: widget.admin,
-        initialAmount: initialAmount ?? 100,
+        initialAmount: initialAmount ?? (food['basis'] == 'unit' ? 1 : 100),
       ),
     );
     if (picked == null || !mounted) return;
@@ -1550,7 +1550,7 @@ class _MealCard extends StatelessWidget {
                   minTileHeight: Gaps.hit,
                   title: Text(entry['name'] as String),
                   subtitle: Text(
-                    '${entry['amount']} ${entry['basis'] == 'solid' ? t.grams : t.milliliters}',
+                    '${entry['amount']} ${t.unitOf(entry)}',
                     style: TextStyle(color: apple.labelSecondary),
                   ),
                   trailing: SizedBox(
@@ -1760,12 +1760,12 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
     final list = showRecent ? recent : (results ?? const []);
 
     Widget row(Map<String, dynamic> food) {
-      final unit = food['basis'] == 'solid' ? t.grams : t.milliliters;
+      final unit = t.unitOf(food);
       final last = food['lastAmount'] as num?;
       final detail = [
         last != null
             ? '${_plainNumber(last)} $unit'
-            : '${_plainNumber((food['calories'] as num?) ?? 0)} ${t.kcal} / 100 $unit',
+            : '${_plainNumber((food['calories'] as num?) ?? 0)} ${t.kcal} ${t.perOf(food)}',
         if (food['verified'] == true) t.verified,
       ].join(' · ');
       return ListTile(
@@ -3893,10 +3893,10 @@ class _FoodActionsState extends State<FoodActions> {
   Widget build(BuildContext context) {
     final t = widget.t;
     final apple = context.apple;
-    final unit = food['basis'] == 'solid' ? t.grams : t.milliliters;
+    final unit = t.unitOf(food);
     final per100 = (food['calories'] as num?) ?? 0;
     final value = parsedAmount;
-    final kcal = value == null ? 0 : (per100 * value / 100).round();
+    final kcal = value == null ? 0 : (food['basis'] == 'unit' ? per100 * value : per100 * value / 100).round();
     return Padding(
       padding: EdgeInsets.fromLTRB(
         Gaps.lg,
@@ -3916,7 +3916,7 @@ class _FoodActionsState extends State<FoodActions> {
           ),
           Text(
             [
-              '${_plainNumber(per100)} ${t.kcal} / 100 $unit',
+              '${_plainNumber(per100)} ${t.kcal} ${t.perOf(food)}',
               if (food['verified'] == true) t.verified,
             ].join(' · '),
             style: TextStyle(color: apple.labelSecondary),
@@ -4145,7 +4145,11 @@ class _FoodScreenState extends State<FoodScreen> {
     text: (_initial?['name'] as String?) ?? widget.initialName ?? '',
   );
   late final barcode = TextEditingController(text: widget.barcode ?? '');
-  late String basis = _initial?['basis'] == 'liquid' ? 'liquid' : 'solid';
+  late String basis = switch (_initial?['basis']) {
+    'liquid' => 'liquid',
+    'unit' => 'unit',
+    _ => 'solid',
+  };
 
   bool get editing => widget.food != null;
 
@@ -4302,6 +4306,7 @@ class _FoodScreenState extends State<FoodScreen> {
             options: [
               AppleMenuOption('solid', t.solid),
               AppleMenuOption('liquid', t.liquid),
+              AppleMenuOption('unit', t.perUnit),
             ],
             onChanged: (value) => setState(() => basis = value),
           ),
