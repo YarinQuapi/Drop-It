@@ -81,6 +81,7 @@ model User {
   dailyGoals      DailyGoal[]
   diaryEntries    DiaryEntry[]
   weights         WeightEntry[]
+  weightGoal      WeightGoal?
   foods           Food[]           @relation("FoodOwner")
   verifiedFoods   Food[]           @relation("VerifiedBy")
   fastingSettings FastingSettings?
@@ -190,6 +191,17 @@ model WeightEntry {
 
   @@unique([userId, externalId])
   @@index([userId, loggedAt])
+}
+
+// The weight the user is working towards. startKg is where they stood when
+// the goal was set, so progress can be shown as a share of the way there.
+model WeightGoal {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetKg  Decimal  @db.Decimal(6, 2)
+  startKg   Decimal  @db.Decimal(6, 2)
+  setAt     DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model HealthSettings {

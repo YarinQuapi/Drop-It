@@ -114,6 +114,10 @@ export const weightSchema = z.object({
   loggedAt: z.string().datetime().optional(),
 });
 
+export const weightGoalSchema = z.object({
+  targetKg: z.number().gt(0).max(500),
+});
+
 export const healthSettingsSchema = z.object({
   exerciseGoalMinutes: z.number().int().min(1).max(1440),
   stepGoal: z.number().int().min(100).max(200000),

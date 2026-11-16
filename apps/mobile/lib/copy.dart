@@ -296,6 +296,86 @@ class Copy {
   String get logWeight => pick('Log weight', 'רישום משקל');
   String get graphEmpty =>
       pick('Log a weight to see the graph.', 'רשמו משקל כדי לראות את הגרף.');
+  String get weightGoal => pick('Weight goal', 'יעד משקל');
+  String get goalWeightKg => pick('Goal weight (kg)', 'משקל יעד (ק״ג)');
+  String get setGoal => pick('Set goal', 'קביעת יעד');
+  String get removeGoal => pick('Remove goal', 'הסרת היעד');
+  String get goalIntro => pick(
+    'Set a target weight to see your trend and an estimated date.',
+    'קבעו משקל יעד כדי לראות את המגמה ותאריך משוער.',
+  );
+  String get goalEta => pick('Estimated goal date', 'תאריך יעד משוער');
+  String get atCurrentPace => pick('at your current pace', 'בקצב הנוכחי');
+  String get goalReached => pick('Goal reached', 'הגעתם ליעד');
+  String get goalReachedHint =>
+      pick('You can set a new goal any time.', 'אפשר לקבוע יעד חדש בכל רגע.');
+  String get goalNeedData => pick(
+    "Keep logging. After a week of weigh-ins you'll see your pace and an estimated date.",
+    'המשיכו לרשום. אחרי שבוע של שקילות יוצגו הקצב ותאריך משוער.',
+  );
+  String get goalNoEta => pick('No estimated date', 'אין תאריך משוער');
+  String get goalOffTrack => pick(
+    "Your recent weigh-ins aren't moving toward the goal.",
+    'השקילות האחרונות לא מתקדמות לכיוון היעד.',
+  );
+  String get currentWeight => pick('Current', 'נוכחי');
+  String get toGo => pick('To go', 'נותרו');
+  String get weightPace => pick('Pace', 'קצב');
+  String get kgPerWeek => pick('kg/week', 'ק״ג בשבוע');
+  String get weighIns => pick('Weigh-ins', 'שקילות');
+  String get trend => pick('Trend', 'מגמה');
+  String get goalLine => pick('Goal', 'יעד');
+
+  /// "In 7 weeks" style distance to a day [days] ahead, in the largest unit that reads naturally.
+  String until(int days) {
+    String count(
+      int n,
+      String enOne,
+      String enMany,
+      String heOne,
+      String heTwo,
+      String heMany,
+    ) => he
+        ? 'בעוד ${n == 1
+              ? heOne
+              : n == 2
+              ? heTwo
+              : '$n $heMany'}'
+        : 'In $n ${n == 1 ? enOne : enMany}';
+    if (days <= 0) return pick('Today', 'היום');
+    if (days < 14) {
+      return count(days, 'day', 'days', 'יום', 'יומיים', 'ימים');
+    }
+    if (days < 70) {
+      return count(
+        (days / 7).round(),
+        'week',
+        'weeks',
+        'שבוע',
+        'שבועיים',
+        'שבועות',
+      );
+    }
+    if (days < 730) {
+      return count(
+        (days / 30.44).round(),
+        'month',
+        'months',
+        'חודש',
+        'חודשיים',
+        'חודשים',
+      );
+    }
+    return count(
+      (days / 365.25).round(),
+      'year',
+      'years',
+      'שנה',
+      'שנתיים',
+      'שנים',
+    );
+  }
+
   String get autoPublish =>
       pick('Publish new foods by default', 'פרסום מזונות חדשים כברירת מחדל');
   String get fasting => pick('Intermittent fasting', 'צום לסירוגין');

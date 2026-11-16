@@ -39,5 +39,22 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    # libtesseract has no Apple Silicon simulator slice, so nothing that calls it
+    # can link there. Leave that code out on that one platform so the app still
+    # runs; label scanning reports itself unavailable (see the plugin's Swift file).
+    if target.name == 'SwiftyTesseract'
+      target.build_configurations.each do |config|
+        config.build_settings['EXCLUDED_SOURCE_FILE_NAMES[sdk=iphonesimulator*][arch=arm64]'] = 'SwiftyTesseract.swift SwiftyTesseractError.swift'
+      end
+    end
+  end
+  # SwiftyTesseract answers the missing slice by excluding arm64 from every
+  # simulator build, which leaves an Intel-only app that current simulators
+  # refuse to install. Drop that exclusion now that the code is left out instead.
+  support_files = File.join(installer.sandbox.root.to_s, 'Target Support Files')
+  Dir.glob(File.join(support_files, '{Pods-Runner*,SwiftyTesseract}', '*.xcconfig')).each do |path|
+    text = File.read(path)
+    kept = text.gsub(/^EXCLUDED_ARCHS\[sdk=iphonesimulator\*\] = arm64\n/, '')
+    File.write(path, kept) unless kept == text
   end
 end

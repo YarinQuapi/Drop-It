@@ -748,6 +748,23 @@ button.quiet:active { transform: scale(0.96); opacity: 0.65; box-shadow: none; }
   animation: draw 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+.graph-goal { stroke: var(--accent-success); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 1 7; }
+.graph-trend { stroke: var(--label-secondary); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 8 7; }
+.graph-arrival { fill: var(--bg-elevated); stroke: var(--accent-success); stroke-width: 3; }
+.graph-legend { display: flex; flex-wrap: wrap; gap: var(--gap-sm) var(--gap-lg); margin: var(--gap-sm) 0 var(--gap-md); color: var(--label-secondary); font-size: 0.8125rem; }
+.graph-legend span { display: inline-flex; align-items: center; gap: var(--gap-sm); }
+.graph-legend i { width: 20px; height: 0; border-top: 3px solid var(--accent-primary); border-radius: var(--radius-pill); }
+.graph-legend i.swatch-trend { border-top: 2px dashed var(--label-secondary); border-radius: 0; }
+.graph-legend i.swatch-goal { border-top: 2px dotted var(--accent-success); border-radius: 0; }
+
+/* Weight goal */
+.goal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-md); margin-bottom: var(--gap-sm); }
+.goal-head h2 { margin: 0; }
+.goal-eta { display: grid; gap: 2px; }
+.goal-eta span, .goal-eta small { color: var(--label-secondary); font-size: 0.8125rem; }
+.goal-eta b { font-size: 1.75rem; line-height: 1.15; letter-spacing: -0.022em; font-variant-numeric: tabular-nums; }
+.goal-stats { margin-top: var(--gap-lg); }
+
 .graph-dot {
   fill: var(--accent-primary);
   opacity: 0;

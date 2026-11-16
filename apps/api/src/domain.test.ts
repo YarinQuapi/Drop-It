@@ -21,6 +21,7 @@ import {
   validatePassword,
   weightChangeKg,
   weightForGoal,
+  weightTrend,
 } from "./domain.js";
 import { DEFAULT_USER_PERMISSIONS, OPERATIONS, resolvePermissions } from "./rbac.js";
 import { changePasswordSchema, fastingSchema, foodSchema, healthSettingsSchema, healthSyncSchema, profileSchema, signupSchema } from "./schemas.js";
@@ -531,4 +532,84 @@ test("Apple Health sync payloads are validated and default to empty lists", () =
   assert.equal(healthSyncSchema.safeParse({ days: [{ day: "2026-10-30", steps: -1, exerciseMinutes: 0, activeKcal: 0 }] }).success, false);
   assert.equal(healthSettingsSchema.safeParse({ exerciseGoalMinutes: 30, stepGoal: 10000 }).success, true);
   assert.equal(healthSettingsSchema.safeParse({ exerciseGoalMinutes: 0, stepGoal: 10000 }).success, false);
+});
+
+const trendNow = new Date("2026-11-15T10:00:00.000Z");
+function weighIn(daysAgo: number, weightKg: number) {
+  return { loggedAt: new Date(trendNow.getTime() - daysAgo * 86400000), weightKg };
+}
+
+test("weight trend fits recent weigh-ins and projects when the goal is reached", () => {
+  // Exactly 0.1 kg lost per day: 82 → 80 over 20 days, 5 kg left to 75.
+  const trend = weightTrend({
+    weights: [weighIn(20, 82), weighIn(10, 81), weighIn(0, 80)],
+    targetKg: 75,
+    startKg: 82,
+    now: trendNow,
+  });
+  assert.equal(trend.status, "on_track");
+  assert.equal(trend.currentKg, 80);
+  assert.equal(trend.remainingKg, 5);
+  assert.equal(trend.ratePerWeekKg, -0.7);
+  assert.equal(trend.progress, 0.29);
+  assert.equal(Math.round((trend.etaAt!.getTime() - trendNow.getTime()) / 86400000), 50);
+  assert.equal(trend.line!.fromKg, 82);
+});
+
+test("weight trend ignores weigh-ins older than the recent window", () => {
+  // A big drop months ago must not speed up today's slow pace.
+  const trend = weightTrend({
+    weights: [weighIn(200, 100), weighIn(28, 81.4), weighIn(14, 81.2), weighIn(0, 81)],
+    targetKg: 80,
+    startKg: 100,
+    now: trendNow,
+  });
+  assert.equal(trend.ratePerWeekKg, -0.1);
+  assert.equal(Math.round((trend.etaAt!.getTime() - trendNow.getTime()) / 86400000), 70);
+});
+
+test("weight trend widens the window when the last month is too thin", () => {
+  const trend = weightTrend({
+    weights: [weighIn(60, 84), weighIn(2, 81.1)],
+    targetKg: 78,
+    startKg: 84,
+    now: trendNow,
+  });
+  assert.equal(trend.status, "on_track");
+  assert.equal(trend.ratePerWeekKg, -0.35);
+});
+
+test("weight trend needs a week of weigh-ins before it estimates", () => {
+  const few = weightTrend({ weights: [weighIn(3, 81), weighIn(0, 80)], targetKg: 75, startKg: 81, now: trendNow });
+  assert.equal(few.status, "need_data");
+  assert.equal(few.etaAt, null);
+  assert.equal(few.line, null);
+  const none = weightTrend({ weights: [], targetKg: 75, startKg: 81, now: trendNow });
+  assert.equal(none.status, "need_data");
+  assert.equal(none.currentKg, 81);
+  assert.equal(none.progress, 0);
+});
+
+test("weight trend is off track when moving away from, or barely towards, the goal", () => {
+  const away = weightTrend({ weights: [weighIn(14, 80), weighIn(0, 81)], targetKg: 75, startKg: 80, now: trendNow });
+  assert.equal(away.status, "off_track");
+  assert.equal(away.ratePerWeekKg, 0.5);
+  assert.equal(away.etaAt, null);
+  assert.equal(away.progress, 0);
+  const flat = weightTrend({ weights: [weighIn(14, 80), weighIn(0, 80)], targetKg: 75, startKg: 80, now: trendNow });
+  assert.equal(flat.status, "off_track");
+  const crawl = weightTrend({ weights: [weighIn(28, 80.04), weighIn(0, 80)], targetKg: 70, startKg: 80.04, now: trendNow });
+  assert.equal(crawl.status, "off_track");
+});
+
+test("weight trend reports a reached goal in either direction", () => {
+  const lost = weightTrend({ weights: [weighIn(14, 76), weighIn(0, 74.8)], targetKg: 75, startKg: 80, now: trendNow });
+  assert.equal(lost.status, "reached");
+  assert.equal(lost.remainingKg, 0);
+  assert.equal(lost.progress, 1);
+  const gaining = weightTrend({ weights: [weighIn(14, 60), weighIn(0, 61)], targetKg: 65, startKg: 60, now: trendNow });
+  assert.equal(gaining.status, "on_track");
+  assert.equal(gaining.ratePerWeekKg, 0.5);
+  const gained = weightTrend({ weights: [weighIn(0, 65.2)], targetKg: 65, startKg: 60, now: trendNow });
+  assert.equal(gained.status, "reached");
 });

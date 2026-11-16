@@ -230,6 +230,23 @@ export type WeekResponse = {
 
 export type WeightPoint = { id: string; weightKg: number; loggedAt: string; source: "manual" | "health" };
 
+export type WeightGoal = { targetKg: number; startKg: number; setAt: string };
+
+export type WeightTrend = {
+  status: "need_data" | "on_track" | "off_track" | "reached";
+  currentKg: number;
+  remainingKg: number;
+  /** Share of the way from the start weight to the target, 0 to 1. */
+  progress: number;
+  ratePerWeekKg: number | null;
+  etaAt: string | null;
+  etaDay: string | null;
+  /** Fitted line through recent weigh-ins: weight at `fromAt` and change per day. */
+  line: { fromAt: string; fromKg: number; perDayKg: number } | null;
+};
+
+export type WeightOverview = { weights: WeightPoint[]; goal: WeightGoal | null; trend: WeightTrend | null };
+
 export type AppleHealthState = {
   connected: boolean;
   connectedOn: string | null;

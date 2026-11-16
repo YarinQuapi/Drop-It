@@ -1,6 +1,10 @@
 import Flutter
 import UIKit
+// libtesseract has no Apple Silicon simulator slice; there the plugin builds
+// without it and answers every scan with an error (see the Podfile).
+#if !(targetEnvironment(simulator) && arch(arm64))
 import libtesseract
+#endif
 
 /// Drives libtesseract directly (instead of SwiftyTesseract's wrapper) so we
 /// can choose the page segmentation mode. Without a block mode Tesseract
@@ -61,6 +65,9 @@ public class SwiftFlutterTesseractOcrPlugin: NSObject, FlutterPlugin {
     }
 
     private static func recognize(_ image: CGImage, tessdata: String, language: String, psm: Int) -> Outcome {
+        #if targetEnvironment(simulator) && arch(arm64)
+        return .failure("Text recognition is not available on this simulator")
+        #else
         let width = image.width
         let height = image.height
         // Hand Tesseract the colour pixels: its own thresholding reads
@@ -93,5 +100,6 @@ public class SwiftFlutterTesseractOcrPlugin: NSObject, FlutterPlugin {
         guard let cString = TessBaseAPIGetUTF8Text(api) else { return .failure("No text returned") }
         defer { TessDeleteText(cString) }
         return .success(String(cString: cString))
+        #endif
     }
 }

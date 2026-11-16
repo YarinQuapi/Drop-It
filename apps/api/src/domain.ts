@@ -353,6 +353,96 @@ export function weightChangeKg(input: {
   return round2(inWeek[0].weightKg - before[0].weightKg);
 }
 
+export type WeightTrendStatus = "need_data" | "on_track" | "off_track" | "reached";
+
+export type WeightTrend = {
+  status: WeightTrendStatus;
+  /** Latest weigh-in, or the goal's start weight when there is none. */
+  currentKg: number;
+  /** Distance left to the target, never negative. */
+  remainingKg: number;
+  /** Share of the way from the start weight to the target, 0 to 1. */
+  progress: number;
+  /** Signed change per week along the fitted line. Null without enough weigh-ins. */
+  ratePerWeekKg: number | null;
+  /** When the fitted line reaches the target. Only set when on track. */
+  etaAt: Date | null;
+  /** The fitted line, for drawing: weight at `fromAt` and its change per day. */
+  line: { fromAt: Date; fromKg: number; perDayKg: number } | null;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Recent weigh-ins describe the current pace; widen only when they are too few. */
+const TREND_WINDOWS_DAYS = [30, 90];
+/** Day-to-day swings (water, food) drown out real change over less than a week. */
+const TREND_MIN_SPAN_DAYS = 7;
+/** An arrival further out than this is not a useful estimate. */
+const TREND_MAX_ETA_DAYS = 3 * 365;
+
+function fitLine(points: { t: number; kg: number }[]): { slope: number; at: (t: number) => number } {
+  const meanT = points.reduce((sum, point) => sum + point.t, 0) / points.length;
+  const meanKg = points.reduce((sum, point) => sum + point.kg, 0) / points.length;
+  let covariance = 0;
+  let variance = 0;
+  for (const point of points) {
+    covariance += (point.t - meanT) * (point.kg - meanKg);
+    variance += (point.t - meanT) ** 2;
+  }
+  const slope = variance === 0 ? 0 : covariance / variance;
+  return { slope, at: (t) => meanKg + slope * (t - meanT) };
+}
+
+/**
+ * Where the user stands against their weight goal. The pace is a least-squares
+ * line through recent weigh-ins, so one unusual reading does not swing the ETA.
+ */
+export function weightTrend(input: {
+  weights: { loggedAt: Date; weightKg: number }[];
+  targetKg: number;
+  startKg: number;
+  now: Date;
+}): WeightTrend {
+  const now = input.now.getTime();
+  const past = input.weights
+    .filter((entry) => entry.loggedAt.getTime() <= now)
+    .sort((a, b) => a.loggedAt.getTime() - b.loggedAt.getTime());
+  const currentKg = past.length > 0 ? past[past.length - 1].weightKg : input.startKg;
+  const direction = Math.sign(input.targetKg - input.startKg);
+  const reached = direction <= 0 ? currentKg <= input.targetKg : currentKg >= input.targetKg;
+  const total = Math.abs(input.targetKg - input.startKg);
+  const remainingKg = reached ? 0 : round2(Math.abs(input.targetKg - currentKg));
+  const progress = reached || total === 0 ? 1 : Math.min(1, Math.max(0, 1 - Math.abs(input.targetKg - currentKg) / total));
+
+  let window: typeof past = [];
+  for (const days of TREND_WINDOWS_DAYS) {
+    window = past.filter((entry) => entry.loggedAt.getTime() >= now - days * DAY_MS);
+    if (window.length >= 2) {
+      const span = window[window.length - 1].loggedAt.getTime() - window[0].loggedAt.getTime();
+      if (span >= TREND_MIN_SPAN_DAYS * DAY_MS) break;
+    }
+    window = [];
+  }
+  const base = { currentKg, remainingKg, progress: round2(progress) };
+  if (window.length === 0) {
+    return { ...base, status: reached ? "reached" : "need_data", ratePerWeekKg: null, etaAt: null, line: null };
+  }
+
+  const fromAt = window[0].loggedAt;
+  // Days since the first weigh-in in the window keep the sums small and exact enough.
+  const fit = fitLine(window.map((entry) => ({ t: (entry.loggedAt.getTime() - fromAt.getTime()) / DAY_MS, kg: entry.weightKg })));
+  const line = { fromAt, fromKg: round2(fit.at(0)), perDayKg: fit.slope };
+  const ratePerWeekKg = round2(fit.slope * 7);
+  if (reached) return { ...base, status: "reached", ratePerWeekKg, etaAt: null, line };
+
+  const nowDays = (now - fromAt.getTime()) / DAY_MS;
+  const daysLeft = fit.slope === 0 ? Infinity : Math.max(0, (input.targetKg - fit.at(nowDays)) / fit.slope);
+  const towards = fit.slope * direction > 0;
+  if (!towards || daysLeft > TREND_MAX_ETA_DAYS) {
+    return { ...base, status: "off_track", ratePerWeekKg, etaAt: null, line };
+  }
+  return { ...base, status: "on_track", ratePerWeekKg, etaAt: new Date(now + daysLeft * DAY_MS), line };
+}
+
 export type PasswordChecks = {
   length: boolean;
   english: boolean;
