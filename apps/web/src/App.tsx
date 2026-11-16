@@ -24,10 +24,13 @@ import {
   type Profile,
   setStoredToken,
   type WeekResponse,
+  type WeightGoal,
+  type WeightOverview,
   type WeightPoint,
+  type WeightTrend,
 } from "./api";
 import { fetchAppleConfig, signInWithApple, type AppleConfig } from "./apple";
-import { addDays, formatDayLabel, formatJerusalem, formatJerusalemDay, formatJerusalemTime, formatWeekday, formatWeekRange, hourLabel, jerusalemParts, todayJerusalemDay } from "./clock";
+import { addDays, formatDayLabel, formatJerusalem, formatJerusalemDay, formatJerusalemTime, formatUntil, formatWeekday, formatWeekRange, hourLabel, jerusalemParts, todayJerusalemDay } from "./clock";
 import { THEME_MODES, useI18n, useTheme, type Copy, type Lang, type ThemeMode } from "./i18n";
 import {
   ageFromDob,
@@ -1386,11 +1389,13 @@ function formatKcal(value: number): string {
 
 function WeightPage() {
   const { t } = useI18n();
-  const [weights, setWeights] = useState<WeightPoint[]>(() => peek<{ weights: WeightPoint[] }>("/api/weights")?.weights ?? []);
+  const [overview, setOverview] = useState<WeightOverview>(
+    () => peek<WeightOverview>("/api/weights") ?? { weights: [], goal: null, trend: null },
+  );
   const [error, setError] = useState("");
+  const { weights, goal, trend } = overview;
   async function load() {
-    const data = await api<{ weights: WeightPoint[] }>("/api/weights");
-    setWeights(data.weights);
+    setOverview(await api<WeightOverview>("/api/weights"));
   }
   useEffect(() => { load().catch((err) => setError(message(t, err))); }, [t]);
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -1422,8 +1427,9 @@ function WeightPage() {
         {error && <p className="error">{error}</p>}
         <button type="submit">{t.logWeight}</button>
       </Form>
+      <WeightGoalCard goal={goal} trend={trend} onChange={load} />
       <section className="card">
-        {weights.length === 0 ? <p className="muted">{t.graphEmpty}</p> : <WeightGraph weights={weights} />}
+        {weights.length === 0 ? <p className="muted">{t.graphEmpty}</p> : <WeightGraph weights={weights} goal={goal} trend={trend} />}
         {weights.map((point) => (
           <div className="entry" key={point.id}>
             <span>
@@ -1438,28 +1444,154 @@ function WeightPage() {
   );
 }
 
-function WeightGraph({ weights }: { weights: WeightPoint[] }) {
+/** The goal, progress towards it, and when the current pace gets there. */
+function WeightGoalCard({ goal, trend, onChange }: { goal: WeightGoal | null; trend: WeightTrend | null; onChange: () => Promise<void> }) {
+  const { t } = useI18n();
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState("");
+  async function run(request: () => Promise<unknown>) {
+    try {
+      await request();
+      await onChange();
+      setEditing(false);
+      setError("");
+    } catch (err) {
+      setError(message(t, err));
+    }
+  }
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    return run(() => api("/api/weights/goal", { method: "PUT", body: JSON.stringify({ targetKg: readNutrient(data.get("targetKg")) }) }));
+  }
+  if (!goal || !trend || editing) {
+    return (
+      <Form className="card" onSubmit={save}>
+        <h2>{t.weightGoal}</h2>
+        {!goal && <p className="muted">{t.goalIntro}</p>}
+        <label>
+          <span>{t.goalWeightKg}</span>
+          <input name="targetKg" inputMode="decimal" pattern="\d+([.,]\d+)?" defaultValue={goal?.targetKg ?? ""} required />
+        </label>
+        {error && <p className="error">{error}</p>}
+        <div className="fast-actions">
+          <button type="submit">{goal ? t.save : t.setGoal}</button>
+          {goal && <button type="button" className="secondary" onClick={() => { setEditing(false); setError(""); }}>{t.cancel}</button>}
+          {goal && <button type="button" className="quiet" onClick={() => run(() => api("/api/weights/goal", { method: "DELETE" }))}>{t.removeGoal}</button>}
+        </div>
+      </Form>
+    );
+  }
+  const rate = trend.ratePerWeekKg;
+  const until = trend.etaAt ? formatUntil(trend.etaAt) : "";
+  return (
+    <section className="card">
+      <div className="goal-head">
+        <h2>{t.weightGoal}</h2>
+        <button type="button" className="secondary" onClick={() => setEditing(true)}>{t.edit}</button>
+      </div>
+      {trend.status === "on_track" && trend.etaAt && (
+        <div className="goal-eta">
+          <span>{t.goalEta}</span>
+          <b>{formatJerusalemDay(trend.etaAt)}</b>
+          <small>{until.charAt(0).toUpperCase() + until.slice(1)} {t.atCurrentPace}</small>
+        </div>
+      )}
+      {trend.status === "reached" && (
+        <div className="goal-eta">
+          <b className="success-text">{t.goalReached}</b>
+          <small>{t.goalReachedHint}</small>
+        </div>
+      )}
+      {trend.status === "off_track" && (
+        <div className="goal-eta">
+          <b>{t.goalNoEta}</b>
+          <small>{t.goalOffTrack}</small>
+        </div>
+      )}
+      {trend.status === "need_data" && <p className="muted">{t.goalNeedData}</p>}
+      <div className="progress-row">
+        <div className="progress-head">
+          <span>{goal.startKg} {t.kg}</span>
+          <span>{goal.targetKg} {t.kg}</span>
+        </div>
+        <div
+          className={trend.status === "reached" ? "progress-bar done" : "progress-bar"}
+          role="progressbar"
+          aria-label={t.weightGoal}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(trend.progress * 100)}
+        >
+          <i style={{ width: `${trend.progress * 100}%` }} />
+        </div>
+      </div>
+      <div className="stats goal-stats">
+        <div className="stat"><span>{t.currentWeight}</span><b>{trend.currentKg} <small>{t.kg}</small></b></div>
+        <div className="stat"><span>{t.toGo}</span><b>{trend.remainingKg} <small>{t.kg}</small></b></div>
+        <div className="stat">
+          <span>{t.weightPace}</span>
+          <b>
+            {rate == null ? "—" : <><bdi dir="ltr">{rate > 0 ? "+" : rate < 0 ? "−" : ""}{Math.abs(rate)}</bdi> <small>{t.kgPerWeek}</small></>}
+          </b>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function WeightGraph({ weights, goal, trend }: { weights: WeightPoint[]; goal: WeightGoal | null; trend: WeightTrend | null }) {
+  const { t } = useI18n();
   const times = weights.map((point) => new Date(point.loggedAt).getTime());
   const values = weights.map((point) => point.weightKg);
-  const minT = Math.min(...times);
-  const maxT = Math.max(...times);
-  const minV = Math.min(...values);
-  const maxV = Math.max(...values);
+  const firstT = Math.min(...times);
+  const lastT = Math.max(...times);
+
+  // The fitted line runs on past today: to the goal when that is no further ahead than the history shown, otherwise part of the way.
+  let fit: { fromT: number; toT: number; fromKg: number; toKg: number; arrives: boolean } | null = null;
+  if (goal && trend?.line) {
+    const { fromKg, perDayKg } = trend.line;
+    const fromT = new Date(trend.line.fromAt).getTime();
+    const now = Date.now();
+    const horizon = now + Math.max(lastT - firstT, 30 * DAY_MS);
+    const eta = trend.etaAt ? new Date(trend.etaAt).getTime() : null;
+    const arrives = eta != null && eta <= horizon;
+    const toT = trend.status === "reached" ? now : arrives ? eta : horizon;
+    fit = { fromT, toT, fromKg, toKg: arrives ? goal.targetKg : fromKg + (perDayKg * (toT - fromT)) / DAY_MS, arrives };
+  }
+
+  const minT = firstT;
+  const maxT = Math.max(lastT, fit?.toT ?? lastT);
+  const scaleValues = [...values, ...(goal ? [goal.targetKg] : []), ...(fit ? [fit.fromKg, fit.toKg] : [])];
+  const minV = Math.min(...scaleValues);
+  const maxV = Math.max(...scaleValues);
   const width = 640;
   const height = 220;
-  const plotted = weights.map((point) => {
-    const x = maxT === minT ? width / 2 : ((new Date(point.loggedAt).getTime() - minT) / (maxT - minT)) * (width - 24) + 12;
-    const y = maxV === minV ? height / 2 : height - 16 - ((point.weightKg - minV) / (maxV - minV)) * (height - 32);
-    return { id: point.id, x, y, source: point.source };
-  });
+  const x = (time: number) => (maxT === minT ? width / 2 : ((time - minT) / (maxT - minT)) * (width - 24) + 12);
+  const y = (kg: number) => (maxV === minV ? height / 2 : height - 16 - ((kg - minV) / (maxV - minV)) * (height - 32));
+  const plotted = weights.map((point, index) => ({ id: point.id, x: x(times[index]), y: y(point.weightKg), source: point.source }));
   const points = plotted.map((point) => `${point.x},${point.y}`).join(" ");
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img">
-      <polyline className="graph-line" pathLength={1} fill="none" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points} />
-      {plotted.map((point) => (
-        <circle className={point.source === "health" ? "graph-dot health" : "graph-dot"} key={point.id} cx={point.x} cy={point.y} r="4" />
-      ))}
-    </svg>
+    <>
+      <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label={t.weight}>
+        {goal && <line className="graph-goal" x1={12} x2={width - 12} y1={y(goal.targetKg)} y2={y(goal.targetKg)} />}
+        {fit && <line className="graph-trend" x1={x(fit.fromT)} y1={y(fit.fromKg)} x2={x(fit.toT)} y2={y(fit.toKg)} />}
+        <polyline className="graph-line" pathLength={1} fill="none" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points} />
+        {plotted.map((point) => (
+          <circle className={point.source === "health" ? "graph-dot health" : "graph-dot"} key={point.id} cx={point.x} cy={point.y} r="4" />
+        ))}
+        {fit?.arrives && goal && <circle className="graph-arrival" cx={x(fit.toT)} cy={y(goal.targetKg)} r="5" />}
+      </svg>
+      {goal && (
+        <div className="graph-legend">
+          <span><i className="swatch-line" />{t.weighIns}</span>
+          {fit && <span><i className="swatch-trend" />{t.trend}</span>}
+          <span><i className="swatch-goal" />{t.goalLine} {goal.targetKg} {t.kg}</span>
+        </div>
+      )}
+    </>
   );
 }
 

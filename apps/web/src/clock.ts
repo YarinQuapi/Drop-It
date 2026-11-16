@@ -98,3 +98,13 @@ export function formatWeekday(day: string): string {
 export function formatDayLabel(day: string): string {
   return new Intl.DateTimeFormat(locale(), { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" }).format(dayDate(day));
 }
+
+/** "in 7 weeks" style distance to a future moment, in the largest unit that reads naturally. */
+export function formatUntil(iso: string, now = new Date()): string {
+  const days = Math.max(0, Math.round((new Date(iso).getTime() - now.getTime()) / 86400000));
+  const format = new Intl.RelativeTimeFormat(locale(), { numeric: "auto" });
+  if (days < 14) return format.format(days, "day");
+  if (days < 70) return format.format(Math.round(days / 7), "week");
+  if (days < 730) return format.format(Math.round(days / 30.44), "month");
+  return format.format(Math.round(days / 365.25), "year");
+}

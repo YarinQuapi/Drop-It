@@ -2629,8 +2629,15 @@ class _WeightScreenState extends State<WeightScreen> {
   late List<Map<String, dynamic>> weights =
       ((widget.api.peek('/api/weights')?['weights'] as List?) ?? const [])
           .cast<Map<String, dynamic>>();
+  late Map<String, dynamic>? goal =
+      widget.api.peek('/api/weights')?['goal'] as Map<String, dynamic>?;
+  late Map<String, dynamic>? trend =
+      widget.api.peek('/api/weights')?['trend'] as Map<String, dynamic>?;
   final controller = TextEditingController();
+  final goalController = TextEditingController();
   String error = '';
+  String goalError = '';
+  bool editingGoal = false;
 
   @override
   void initState() {
@@ -2638,10 +2645,272 @@ class _WeightScreenState extends State<WeightScreen> {
     unawaited(load());
   }
 
+  @override
+  void dispose() {
+    controller.dispose();
+    goalController.dispose();
+    super.dispose();
+  }
+
   Future<void> load() async {
     final data = await widget.api.send('GET', '/api/weights');
-    setState(
-      () => weights = (data['weights'] as List).cast<Map<String, dynamic>>(),
+    if (!mounted) return;
+    setState(() {
+      weights = (data['weights'] as List).cast<Map<String, dynamic>>();
+      goal = data['goal'] as Map<String, dynamic>?;
+      trend = data['trend'] as Map<String, dynamic>?;
+    });
+  }
+
+  /// Saves ([targetKg] set) or removes (null) the goal, then reloads the trend.
+  Future<void> changeGoal(num? targetKg) async {
+    try {
+      if (targetKg == null) {
+        await widget.api.send('DELETE', '/api/weights/goal');
+      } else {
+        await widget.api.send(
+          'PUT',
+          '/api/weights/goal',
+          body: {'targetKg': targetKg},
+        );
+      }
+      await load();
+      if (!mounted) return;
+      setState(() {
+        editingGoal = false;
+        goalError = '';
+      });
+    } on ApiException catch (err) {
+      setState(() => goalError = widget.t.error(err.code));
+    }
+  }
+
+  Widget goalForm(Copy t, AppleColors apple) {
+    final hasGoal = goal != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(t.weightGoal, style: Theme.of(context).textTheme.titleMedium),
+        if (!hasGoal) ...[
+          const SizedBox(height: Gaps.xs),
+          Text(t.goalIntro, style: TextStyle(color: apple.labelSecondary)),
+        ],
+        const SizedBox(height: Gaps.md),
+        decimalField(goalController, t.goalWeightKg),
+        if (goalError.isNotEmpty) ...[
+          const SizedBox(height: Gaps.sm),
+          ErrorText(goalError),
+        ],
+        const SizedBox(height: Gaps.md),
+        FilledButton(
+          onPressed: () {
+            final targetKg = parseDecimal(goalController.text);
+            if (targetKg == null) {
+              setState(() => goalError = t.error('invalid_body'));
+              return;
+            }
+            unawaited(changeGoal(targetKg));
+          },
+          child: Text(hasGoal ? t.save : t.setGoal),
+        ),
+        if (hasGoal) ...[
+          const SizedBox(height: Gaps.sm),
+          Row(
+            spacing: Gaps.sm,
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => setState(() {
+                    editingGoal = false;
+                    goalError = '';
+                  }),
+                  child: Text(t.cancel),
+                ),
+              ),
+              Expanded(
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: apple.accentDangerText,
+                    minimumSize: const Size.fromHeight(Gaps.hit),
+                  ),
+                  onPressed: () => unawaited(changeGoal(null)),
+                  child: Text(t.removeGoal),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget goalSummary(Copy t, AppleColors apple) {
+    final status = trend!['status'] as String;
+    final etaAt = trend!['etaAt'] as String?;
+    final rate = trend!['ratePerWeekKg'] as num?;
+    final progress = (trend!['progress'] as num).toDouble();
+    final secondary = TextStyle(color: apple.labelSecondary, fontSize: 13);
+    Widget headline(String text, {Color? color}) => Text(
+      text,
+      style: TextStyle(
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.4,
+        color: color,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+    Widget stat(String label, String value, [String? unit]) => Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Gaps.md,
+          vertical: Gaps.sm,
+        ),
+        decoration: BoxDecoration(
+          color: apple.tertiaryFill,
+          borderRadius: BorderRadius.circular(Radii.sm),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(color: apple.labelSecondary, fontSize: 12),
+            ),
+            Text(
+              value,
+              textDirection: TextDirection.ltr,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+            if (unit != null)
+              Text(
+                unit,
+                style: TextStyle(color: apple.labelSecondary, fontSize: 12),
+              ),
+          ],
+        ),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                t.weightGoal,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                minimumSize: const Size(Gaps.hit, Gaps.hit),
+              ),
+              onPressed: () => setState(() {
+                goalController.text = '${goal!['targetKg']}';
+                editingGoal = true;
+              }),
+              child: Text(t.edit),
+            ),
+          ],
+        ),
+        if (status == 'on_track' && etaAt != null) ...[
+          Text(t.goalEta, style: secondary),
+          headline(_jerusalemDate(etaAt)),
+          Text(
+            '${t.until(_daysUntil(etaAt))} ${t.atCurrentPace}',
+            style: secondary,
+          ),
+        ] else if (status == 'reached') ...[
+          headline(t.goalReached, color: apple.accentSuccessText),
+          Text(t.goalReachedHint, style: secondary),
+        ] else if (status == 'off_track') ...[
+          headline(t.goalNoEta),
+          Text(t.goalOffTrack, style: secondary),
+        ] else
+          Text(t.goalNeedData, style: TextStyle(color: apple.labelSecondary)),
+        const SizedBox(height: Gaps.md),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('${goal!['startKg']} ${t.kg}', style: secondary),
+            Text('${goal!['targetKg']} ${t.kg}', style: secondary),
+          ],
+        ),
+        const SizedBox(height: Gaps.sm),
+        EaseBuilder(
+          from: 0,
+          value: progress,
+          builder: (context, shown) => ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: shown,
+              minHeight: 8,
+              backgroundColor: apple.tertiaryFill,
+              color: status == 'reached'
+                  ? apple.accentSuccess
+                  : apple.accentPrimary,
+              semanticsLabel: t.weightGoal,
+            ),
+          ),
+        ),
+        const SizedBox(height: Gaps.lg),
+        Row(
+          spacing: Gaps.sm,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            stat(t.currentWeight, '${trend!['currentKg']}', t.kg),
+            stat(t.toGo, '${trend!['remainingKg']}', t.kg),
+            stat(
+              t.weightPace,
+              rate == null
+                  ? '—'
+                  : '${rate > 0
+                        ? '+'
+                        : rate < 0
+                        ? '−'
+                        : ''}${rate.abs()}',
+              t.kgPerWeek,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget legend(Copy t, AppleColors apple) {
+    Widget item(Color color, String label, {bool dashed = false}) => Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: Gaps.sm,
+      children: [
+        SizedBox(
+          width: 20,
+          height: 3,
+          child: CustomPaint(painter: _SwatchPainter(color, dashed)),
+        ),
+        Text(
+          label,
+          style: TextStyle(color: apple.labelSecondary, fontSize: 13),
+        ),
+      ],
+    );
+    return Wrap(
+      spacing: Gaps.lg,
+      runSpacing: Gaps.sm,
+      children: [
+        item(apple.accentPrimary, t.weighIns),
+        if (trend?['line'] != null)
+          item(apple.labelSecondary, t.trend, dashed: true),
+        item(
+          apple.accentSuccess,
+          '${t.goalLine} ${goal!['targetKg']} ${t.kg}',
+          dashed: true,
+        ),
+      ],
     );
   }
 
@@ -2692,6 +2961,14 @@ class _WeightScreenState extends State<WeightScreen> {
         Card(
           child: Padding(
             padding: const EdgeInsets.all(Gaps.lg),
+            child: goal == null || trend == null || editingGoal
+                ? goalForm(t, apple)
+                : goalSummary(t, apple),
+          ),
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(Gaps.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2700,11 +2977,21 @@ class _WeightScreenState extends State<WeightScreen> {
                     t.graphEmpty,
                     style: TextStyle(color: apple.labelSecondary),
                   )
-                else
+                else ...[
                   SizedBox(
                     height: 180,
-                    child: AnimatedWeightChart(weights: weights),
+                    child: AnimatedWeightChart(
+                      weights: weights,
+                      goal: goal,
+                      trend: trend,
+                    ),
                   ),
+                  if (goal != null) ...[
+                    const SizedBox(height: Gaps.md),
+                    legend(t, apple),
+                    const SizedBox(height: Gaps.sm),
+                  ],
+                ],
                 for (final point in weights.reversed) ...[
                   Divider(
                     color: apple.separator,
@@ -2714,7 +3001,7 @@ class _WeightScreenState extends State<WeightScreen> {
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     minTileHeight: Gaps.hit,
-                    title: Text('${point['weightKg']} kg'),
+                    title: Text('${point['weightKg']} ${t.kg}'),
                     subtitle: Text(
                       '${_jerusalemDate(point['loggedAt'] as String)} ${_jerusalemTime(point['loggedAt'] as String)} · ${point['source'] == 'health' ? t.healthSource : t.manualSource}',
                       style: TextStyle(color: apple.labelSecondary),
@@ -2730,22 +3017,81 @@ class _WeightScreenState extends State<WeightScreen> {
   }
 }
 
+int _daysUntil(String iso) {
+  final left = DateTime.parse(iso).difference(DateTime.now());
+  return (left.inMinutes / (24 * 60)).round();
+}
+
+void _dashedLine(
+  Canvas canvas,
+  Offset from,
+  Offset to,
+  Paint paint, {
+  required double dash,
+  required double gap,
+}) {
+  final length = (to - from).distance;
+  if (length == 0) return;
+  final step = (to - from) / length;
+  for (var at = 0.0; at < length; at += dash + gap) {
+    final end = at + dash < length ? at + dash : length;
+    canvas.drawLine(from + step * at, from + step * end, paint);
+  }
+}
+
+class _SwatchPainter extends CustomPainter {
+  const _SwatchPainter(this.color, this.dashed);
+  final Color color;
+  final bool dashed;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = dashed ? 2 : 3
+      ..strokeCap = StrokeCap.round;
+    final from = Offset(1, size.height / 2);
+    final to = Offset(size.width - 1, size.height / 2);
+    if (dashed) {
+      _dashedLine(canvas, from, to, paint, dash: 3, gap: 4);
+    } else {
+      canvas.drawLine(from, to, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SwatchPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.dashed != dashed;
+}
+
 class WeightPainter extends CustomPainter {
-  WeightPainter(this.weights, this.progress, this.color, this.healthColor);
+  WeightPainter(
+    this.weights,
+    this.progress,
+    this.color,
+    this.healthColor, {
+    this.goal,
+    this.trend,
+    required this.trendColor,
+    required this.goalColor,
+    required this.surface,
+  });
   final List<Map<String, dynamic>> weights;
   final double progress;
   final Color color;
   final Color healthColor;
+  final Map<String, dynamic>? goal;
+  final Map<String, dynamic>? trend;
+  final Color trendColor;
+  final Color goalColor;
+  final Color surface;
+
+  static const _dayMs = 24 * 60 * 60 * 1000;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final dot = Paint()..color = color.withValues(alpha: progress.clamp(0, 1));
-    if (weights.length < 2) {
-      if (weights.isNotEmpty) {
-        canvas.drawCircle(Offset(size.width / 2, size.height / 2), 4, dot);
-      }
-      return;
-    }
+    if (weights.isEmpty) return;
+    final shown = progress.clamp(0.0, 1.0);
     final times = weights
         .map(
           (point) =>
@@ -2756,47 +3102,122 @@ class WeightPainter extends CustomPainter {
     final values = weights
         .map((point) => (point['weightKg'] as num).toDouble())
         .toList();
-    final minT = times.reduce((a, b) => a < b ? a : b);
-    final maxT = times.reduce((a, b) => a > b ? a : b);
-    final minV = values.reduce((a, b) => a < b ? a : b);
-    final maxV = values.reduce((a, b) => a > b ? a : b);
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    final path = Path();
-    final spots = <Offset>[];
-    for (var i = 0; i < weights.length; i++) {
-      final x = maxT == minT
-          ? size.width / 2
-          : (times[i] - minT) / (maxT - minT) * (size.width - 16) + 8;
-      final y = maxV == minV
-          ? size.height / 2
-          : size.height -
-                8 -
-                (values[i] - minV) / (maxV - minV) * (size.height - 16);
-      final spot = Offset(x, y);
-      spots.add(spot);
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
+    double least(Iterable<double> all) => all.reduce((a, b) => a < b ? a : b);
+    double most(Iterable<double> all) => all.reduce((a, b) => a > b ? a : b);
+    final firstT = least(times);
+    final lastT = most(times);
+    final goalKg = (goal?['targetKg'] as num?)?.toDouble();
+
+    // The fitted line runs on past today: to the goal when that is no further
+    // ahead than the history shown, otherwise part of the way.
+    final line = trend?['line'] as Map<String, dynamic>?;
+    double? fitFromT, fitToT, fitFromKg, fitToKg;
+    var arrives = false;
+    if (goalKg != null && line != null) {
+      final now = DateTime.now().millisecondsSinceEpoch.toDouble();
+      final span = lastT - firstT;
+      final horizon = now + (span > 30 * _dayMs ? span : 30 * _dayMs);
+      final etaAt = trend!['etaAt'] as String?;
+      final eta = etaAt == null
+          ? null
+          : DateTime.parse(etaAt).millisecondsSinceEpoch.toDouble();
+      arrives = eta != null && eta <= horizon;
+      fitFromT = DateTime.parse(line['fromAt'] as String).millisecondsSinceEpoch
+          .toDouble();
+      fitFromKg = (line['fromKg'] as num).toDouble();
+      fitToT = trend!['status'] == 'reached'
+          ? now
+          : arrives
+          ? eta
+          : horizon;
+      fitToKg = arrives
+          ? goalKg
+          : fitFromKg +
+                (line['perDayKg'] as num).toDouble() *
+                    (fitToT - fitFromT) /
+                    _dayMs;
     }
-    final metric = path.computeMetrics().first;
-    canvas.drawPath(
-      metric.extractPath(0, metric.length * progress.clamp(0, 1)),
-      paint,
-    );
+
+    final minT = firstT;
+    final maxT = fitToT != null && fitToT > lastT ? fitToT : lastT;
+    final scale = [...values, ?goalKg, ?fitFromKg, ?fitToKg];
+    final minV = least(scale);
+    final maxV = most(scale);
+    double x(double time) => maxT == minT
+        ? size.width / 2
+        : (time - minT) / (maxT - minT) * (size.width - 16) + 8;
+    double y(double kg) => maxV == minV
+        ? size.height / 2
+        : size.height - 8 - (kg - minV) / (maxV - minV) * (size.height - 16);
+
+    if (goalKg != null) {
+      _dashedLine(
+        canvas,
+        Offset(8, y(goalKg)),
+        Offset(size.width - 8, y(goalKg)),
+        Paint()
+          ..color = goalColor.withValues(alpha: shown)
+          ..strokeWidth = 2
+          ..strokeCap = StrokeCap.round,
+        dash: 1,
+        gap: 6,
+      );
+    }
+    if (fitFromT != null) {
+      _dashedLine(
+        canvas,
+        Offset(x(fitFromT), y(fitFromKg!)),
+        Offset(x(fitToT!), y(fitToKg!)),
+        Paint()
+          ..color = trendColor.withValues(alpha: trendColor.a * shown)
+          ..strokeWidth = 2
+          ..strokeCap = StrokeCap.round,
+        dash: 6,
+        gap: 6,
+      );
+    }
+
+    final spots = [
+      for (var i = 0; i < weights.length; i++)
+        Offset(x(times[i]), y(values[i])),
+    ];
+    if (spots.length > 1) {
+      final path = Path()..moveTo(spots.first.dx, spots.first.dy);
+      for (final spot in spots.skip(1)) {
+        path.lineTo(spot.dx, spot.dy);
+      }
+      final metric = path.computeMetrics().first;
+      canvas.drawPath(
+        metric.extractPath(0, metric.length * shown),
+        Paint()
+          ..color = color
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..style = PaintingStyle.stroke,
+      );
+    }
     for (var i = 0; i < spots.length; i++) {
-      final along = i / (spots.length - 1);
+      final along = spots.length == 1 ? 0.0 : i / (spots.length - 1);
       if (along > progress) continue;
       canvas.drawCircle(
         spots[i],
         4,
-        Paint()..color = weights[i]['source'] == 'health' ? healthColor : color,
+        Paint()
+          ..color = (weights[i]['source'] == 'health' ? healthColor : color)
+              .withValues(alpha: spots.length == 1 ? shown : 1),
+      );
+    }
+    if (arrives && shown == 1) {
+      final arrival = Offset(x(fitToT!), y(goalKg!));
+      canvas.drawCircle(arrival, 5, Paint()..color = surface);
+      canvas.drawCircle(
+        arrival,
+        5,
+        Paint()
+          ..color = goalColor
+          ..strokeWidth = 3
+          ..style = PaintingStyle.stroke,
       );
     }
   }
@@ -2805,8 +3226,13 @@ class WeightPainter extends CustomPainter {
   bool shouldRepaint(covariant WeightPainter oldDelegate) =>
       oldDelegate.progress != progress ||
       oldDelegate.weights != weights ||
+      oldDelegate.goal != goal ||
+      oldDelegate.trend != trend ||
       oldDelegate.color != color ||
-      oldDelegate.healthColor != healthColor;
+      oldDelegate.healthColor != healthColor ||
+      oldDelegate.trendColor != trendColor ||
+      oldDelegate.goalColor != goalColor ||
+      oldDelegate.surface != surface;
 }
 
 class SettingsScreen extends StatefulWidget {
@@ -4711,8 +5137,15 @@ class HealthProgressRow extends StatelessWidget {
 }
 
 class AnimatedWeightChart extends StatefulWidget {
-  const AnimatedWeightChart({super.key, required this.weights});
+  const AnimatedWeightChart({
+    super.key,
+    required this.weights,
+    this.goal,
+    this.trend,
+  });
   final List<Map<String, dynamic>> weights;
+  final Map<String, dynamic>? goal;
+  final Map<String, dynamic>? trend;
 
   @override
   State<AnimatedWeightChart> createState() => _AnimatedWeightChartState();
@@ -4768,6 +5201,11 @@ class _AnimatedWeightChartState extends State<AnimatedWeightChart>
           Curves.easeOutCubic.transform(controller.value),
           context.apple.accentPrimary,
           context.apple.accentSuccess,
+          goal: widget.goal,
+          trend: widget.trend,
+          trendColor: context.apple.labelSecondary,
+          goalColor: context.apple.accentSuccess,
+          surface: context.apple.cardBg,
         ),
         child: const SizedBox.expand(),
       ),
