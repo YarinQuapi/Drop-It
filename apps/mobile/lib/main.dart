@@ -2343,6 +2343,28 @@ class _WeekScreenState extends State<WeekScreen> {
     setState(() => week = data);
   }
 
+  /// Moves [weeks] weeks (negative = back); forward stops at the current week.
+  void goToWeek(int weeks) {
+    final sunday = week?['sunday'] as String?;
+    if (sunday == null) return;
+    final target = _shift(sunday, 7 * weeks);
+    if (weeks > 0 && target.compareTo(_todayJerusalem()) > 0) {
+      HapticFeedback.lightImpact();
+      return;
+    }
+    HapticFeedback.selectionClick();
+    on = target;
+    unawaited(load());
+  }
+
+  /// iOS-style paging: swiping right shows the previous week (mirrored in RTL).
+  void onSwipe(DragEndDetails details) {
+    final v = details.primaryVelocity ?? 0;
+    if (v.abs() < 300) return;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    goToWeek((v > 0) != rtl ? -1 : 1);
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
@@ -2420,7 +2442,10 @@ class _WeekScreenState extends State<WeekScreen> {
         ),
       ),
     );
-    return FadeIn(
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragEnd: onSwipe,
+      child: FadeIn(
       key: ValueKey(sunday),
       child: AppList(
         children: [
@@ -2442,22 +2467,14 @@ class _WeekScreenState extends State<WeekScreen> {
                       IconButton.filled(
                         style: weekNavStyle,
                         tooltip: t.previousWeek,
-                        onPressed: () {
-                          on = _shift(sunday, -7);
-                          load();
-                        },
+                        onPressed: () => goToWeek(-1),
                         icon: const DirectionalChevron(back: true),
                       ),
                       const SizedBox(width: Gaps.sm),
                       IconButton.filled(
                         style: weekNavStyle,
                         tooltip: t.nextWeek,
-                        onPressed: isCurrentWeek
-                            ? null
-                            : () {
-                                on = _shift(sunday, 7);
-                                load();
-                              },
+                        onPressed: isCurrentWeek ? null : () => goToWeek(1),
                         icon: const DirectionalChevron(),
                       ),
                     ],
@@ -2605,6 +2622,7 @@ class _WeekScreenState extends State<WeekScreen> {
               ),
             ),
         ],
+      ),
       ),
     );
   }
