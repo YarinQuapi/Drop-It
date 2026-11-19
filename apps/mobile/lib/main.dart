@@ -4114,7 +4114,7 @@ class _ProfileEditorState extends State<ProfileEditor> {
                         return;
                       }
                       try {
-                        await widget.api.send(
+                        final saved = await widget.api.send(
                           'PUT',
                           '/api/profile',
                           body: {
@@ -4127,7 +4127,13 @@ class _ProfileEditorState extends State<ProfileEditor> {
                             'customGoalKcal': goalKcal,
                           },
                         );
-                        if (mounted) setState(() => error = '');
+                        final raised = saved is Map && saved['goalClamped'] == true
+                            ? saved['floorKcal']
+                            : null;
+                        if (mounted) {
+                          setState(() => error =
+                              raised is num ? t.goalRaisedToFloor(raised) : '');
+                        }
                         await widget.onSaved();
                       } on ApiException catch (err) {
                         if (mounted) {
