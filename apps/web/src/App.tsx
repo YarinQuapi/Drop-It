@@ -1666,7 +1666,7 @@ function SettingsPage({ me, setMe, onFastingChange, onLogout }: { me: Me; setMe:
     try {
       const dailyGoalRaw = String(form.get("dailyGoalKcal") ?? "").trim().replace(",", ".");
       const dailyGoalKcal = Math.round(Number(dailyGoalRaw));
-      const next = await api<{ profile: Profile }>("/api/profile", {
+      const next = await api<{ profile: Profile; floorKcal: number; goalClamped: boolean }>("/api/profile", {
         method: "PUT",
         body: JSON.stringify({
           sex: form.get("sex"),
@@ -1679,6 +1679,11 @@ function SettingsPage({ me, setMe, onFastingChange, onLogout }: { me: Me; setMe:
         }),
       });
       setProfile(next.profile);
+      if (next.goalClamped) {
+        // Stay on the form so the raised value is visible instead of silently snapping back.
+        setError(t.goalRaisedToFloor.replace("{kcal}", String(next.floorKcal)));
+        return;
+      }
       setError("");
       navigate("/settings");
     } catch (err) {

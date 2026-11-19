@@ -76,8 +76,10 @@ profileRouter.put(
     const suggested = suggestedCalorieGoal(person);
 
     let customGoalKcal: number | null = null;
+    let goalClamped = false;
     if (body.customGoalKcal !== undefined && body.customGoalKcal !== null) {
       const clamped = Math.max(body.customGoalKcal, floor);
+      goalClamped = clamped > body.customGoalKcal;
       customGoalKcal = clamped === suggested ? null : clamped;
     }
 
@@ -113,6 +115,8 @@ profileRouter.put(
       profile: presentProfile(profile),
       goalKcal: goal?.goalKcal ?? null,
       suggestedGoalKcal: suggested,
+      floorKcal: floor,
+      goalClamped,
     });
   }),
 );

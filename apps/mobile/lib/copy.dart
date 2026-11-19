@@ -72,6 +72,10 @@ class Copy {
   String get pace => pick('Weekly pace', 'קצב שבועי');
   String get dailyGoal => pick('Daily calories (kcal)', 'קלוריות ליום');
   String get useSuggested => pick('Use suggested', 'השתמש בהצעה');
+  String goalRaisedToFloor(num kcal) => pick(
+    'That goal is below your minimum, so it was raised to $kcal kcal.',
+    'היעד שהזנת נמוך מהמינימום שלך, ולכן הועלה ל-$kcal קק״ל.',
+  );
   String get goalFloorNote => pick(
     'Goals never go below your resting metabolism or 1,200 kcal (women) / 1,500 kcal (men).',
     'היעד לא יורד מתחת לקצב חילוף החומרים במנוחה או 1,200 קק״ל (נשים) / 1,500 קק״ל (גברים).',
