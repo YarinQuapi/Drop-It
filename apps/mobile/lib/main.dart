@@ -4127,7 +4127,7 @@ class _ProfileEditorState extends State<ProfileEditor> {
                             'customGoalKcal': goalKcal,
                           },
                         );
-                        final raised = saved is Map && saved['goalClamped'] == true
+                        final raised = saved['goalClamped'] == true
                             ? saved['floorKcal']
                             : null;
                         if (mounted) {
