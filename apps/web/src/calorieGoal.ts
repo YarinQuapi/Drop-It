@@ -34,12 +34,11 @@ export function mifflinStJeor(input: { sex: Sex; weightKg: number; heightCm: num
   return input.sex === "male" ? base + 5 : base - 161;
 }
 
-export function sexCalorieFloor(sex: Sex): number {
-  return sex === "male" ? 1500 : 1200;
-}
+/** No goal, suggested or custom, is ever lower than this. */
+export const MIN_CALORIE_GOAL = 1000;
 
-export function calorieSafetyFloor(input: { sex: Sex; weightKg: number; heightCm: number; age: number }): number {
-  return Math.max(Math.round(mifflinStJeor(input)), sexCalorieFloor(input.sex));
+export function calorieSafetyFloor(_input?: { sex: Sex; weightKg: number; heightCm: number; age: number }): number {
+  return MIN_CALORIE_GOAL;
 }
 
 export function suggestedCalorieGoal(input: {

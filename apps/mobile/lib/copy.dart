@@ -77,8 +77,8 @@ class Copy {
     'היעד שהזנת נמוך מהמינימום שלך, ולכן הועלה ל-$kcal קק״ל.',
   );
   String get goalFloorNote => pick(
-    'Goals never go below your resting metabolism or 1,200 kcal (women) / 1,500 kcal (men).',
-    'היעד לא יורד מתחת לקצב חילוף החומרים במנוחה או 1,200 קק״ל (נשים) / 1,500 קק״ל (גברים).',
+    'Goals never go below 1,000 kcal.',
+    'היעד לא יורד מתחת ל-1,000 קק״ל.',
   );
   String get save => pick('Save', 'שמירה');
   String get goal => pick('Calorie goal', 'יעד קלוריות');

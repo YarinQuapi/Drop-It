@@ -78,7 +78,7 @@ export const profileSchema = z.object({
   weightKg: z.number().gt(0).max(500),
   activity: activitySchema,
   weeklyPace: paceSchema,
-  customGoalKcal: z.number().int().min(800).max(10000).nullable().optional(),
+  customGoalKcal: z.number().int().min(1).max(10000).nullable().optional(),
 });
 
 export const settingsSchema = z.object({
