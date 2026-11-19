@@ -17,23 +17,15 @@ double mifflinStJeor({
   return sex == 'male' ? base + 5 : base - 161;
 }
 
-int sexCalorieFloor(String sex) => sex == 'male' ? 1500 : 1200;
+/// No goal, suggested or custom, is ever lower than this.
+const int minCalorieGoal = 1000;
 
 int calorieSafetyFloor({
   required String sex,
   required num weightKg,
   required num heightCm,
   required int age,
-}) {
-  final bmr = mifflinStJeor(
-    sex: sex,
-    weightKg: weightKg,
-    heightCm: heightCm,
-    age: age,
-  ).round();
-  final floor = sexCalorieFloor(sex);
-  return bmr > floor ? bmr : floor;
-}
+}) => minCalorieGoal;
 
 const activityMultiplier = <String, double>{
   'sedentary': 1.2,
