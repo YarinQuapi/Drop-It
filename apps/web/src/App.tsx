@@ -656,6 +656,7 @@ const MEAL_COLOR: Record<MealCategory, string> = {
   lunch: "var(--accent-energy)",
   dinner: "var(--accent-success)",
   snacks: "var(--label-secondary)",
+  drinks: "var(--accent-drink)",
 };
 
 function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; onFastingChange: () => void }) {
@@ -1151,6 +1152,7 @@ function mealLabel(t: Copy, meal: MealCategory) {
     case "lunch": return t.lunch;
     case "dinner": return t.dinner;
     case "snacks": return t.snacks;
+    case "drinks": return t.drinks;
   }
 }
 

@@ -170,9 +170,9 @@ export type Profile = {
   customGoalKcal: number | null;
 };
 
-export type MealCategory = "breakfast" | "lunch" | "dinner" | "snacks";
+export type MealCategory = "breakfast" | "lunch" | "dinner" | "snacks" | "drinks";
 
-export const MEALS: MealCategory[] = ["breakfast", "lunch", "dinner", "snacks"];
+export const MEALS: MealCategory[] = ["breakfast", "lunch", "dinner", "snacks", "drinks"];
 
 export type DayEntry = Nutrients & {
   id: string;

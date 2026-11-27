@@ -1029,7 +1029,7 @@ class TodayScreen extends StatefulWidget {
   State<TodayScreen> createState() => _TodayScreenState();
 }
 
-const _meals = ['breakfast', 'lunch', 'dinner', 'snacks'];
+const _meals = ['breakfast', 'lunch', 'dinner', 'snacks', 'drinks'];
 
 class _TodayScreenState extends State<TodayScreen> {
   late Map<String, dynamic>? day = widget.api.peek('/api/days/today');
@@ -2032,6 +2032,8 @@ Color _mealColor(AppleColors apple, String meal) {
       return apple.accentEnergy;
     case 'dinner':
       return apple.accentSuccess;
+    case 'drinks':
+      return apple.accentDrink;
     default:
       return apple.labelSecondary;
   }

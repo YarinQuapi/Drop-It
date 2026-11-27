@@ -33,6 +33,7 @@
   --accent-energy-tint: rgba(255, 149, 0, 0.14);
   --accent-success: #34c759;
   --accent-success-text: #248a3d;
+  --accent-drink: #30b0c7;
   --accent-danger: #ff3b30;
   --accent-danger-text: #d70015;
   --fast-gradient: linear-gradient(160deg, #ff9f0a 0%, #ff6a00 100%);
@@ -92,6 +93,7 @@
     --accent-energy-tint: rgba(255, 159, 10, 0.18);
     --accent-success: #30d158;
     --accent-success-text: #30d158;
+    --accent-drink: #40cbe0;
     --accent-danger: #ff453a;
     --accent-danger-text: #ff453a;
     --fast-gradient: linear-gradient(160deg, #ff9f0a 0%, #e8590c 100%);
@@ -122,6 +124,7 @@
   --accent-energy-tint: rgba(255, 159, 10, 0.18);
   --accent-success: #30d158;
   --accent-success-text: #30d158;
+  --accent-drink: #40cbe0;
   --accent-danger: #ff453a;
   --accent-danger-text: #ff453a;
   --fast-gradient: linear-gradient(160deg, #ff9f0a 0%, #e8590c 100%);
