@@ -267,6 +267,7 @@ class Copy {
   String get lunch => pick('Lunch', 'ארוחת צהריים');
   String get dinner => pick('Dinner', 'ארוחת ערב');
   String get snacks => pick('Snacks', 'חטיפים');
+  String get drinks => pick('Drinks', 'משקאות');
   String get kcal => pick('kcal', 'קק״ל');
 
   String mealLabel(String meal) {
@@ -277,6 +278,8 @@ class Copy {
         return lunch;
       case 'dinner':
         return dinner;
+      case 'drinks':
+        return drinks;
       default:
         return snacks;
     }

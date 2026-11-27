@@ -20,6 +20,7 @@ Tokens live in `apps/web/src/styles.css` (CSS variables) and `apps/mobile/lib/th
 - `accent-text` #0066D6 / #3D9BFF for blue TEXT (links, tinted-button labels, active tab label) so it passes AA; filled buttons keep system blue.
 - `accent-energy-tint` for the tinted start-fast button; `accent-primary-on-inverse` for actions on inverted surfaces (toast).
 - `accent-success` #34C759 / #30D158; `accent-danger` #FF3B30 / #FF453A
+- `accent-drink` #30B0C7 / #40CBE0 (system teal): the Drinks slice of the meal ring and legend.
 - For colored TEXT use the `-text` variants (`accent-energy-text`, `accent-success-text`, `accent-danger-text`) for contrast on white.
 
 ## Radii

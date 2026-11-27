@@ -158,7 +158,7 @@ function presentEntry(entry: {
   foodId: string | null;
   name: string;
   basis: "solid" | "liquid" | "unit";
-  meal: "breakfast" | "lunch" | "dinner" | "snacks";
+  meal: "breakfast" | "lunch" | "dinner" | "snacks" | "drinks";
   amount: { toNumber(): number };
   calories: { toNumber(): number };
   protein: { toNumber(): number };

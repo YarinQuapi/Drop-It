@@ -46,6 +46,7 @@ class AppleColors extends ThemeExtension<AppleColors> {
     required this.accentEnergyText,
     required this.accentSuccess,
     required this.accentSuccessText,
+    required this.accentDrink,
     required this.accentDanger,
     required this.accentDangerText,
     required this.fastGradient,
@@ -64,6 +65,7 @@ class AppleColors extends ThemeExtension<AppleColors> {
   final Color accentEnergyText;
   final Color accentSuccess;
   final Color accentSuccessText;
+  final Color accentDrink;
   final Color accentDanger;
   final Color accentDangerText;
   final List<Color> fastGradient;
@@ -83,6 +85,7 @@ class AppleColors extends ThemeExtension<AppleColors> {
     accentEnergyText: Color(0xFFC93400),
     accentSuccess: Color(0xFF34C759),
     accentSuccessText: Color(0xFF248A3D),
+    accentDrink: Color(0xFF30B0C7),
     accentDanger: Color(0xFFFF3B30),
     accentDangerText: Color(0xFFD70015),
     fastGradient: [Color(0xFFFF9F0A), Color(0xFFFF6A00)],
@@ -102,6 +105,7 @@ class AppleColors extends ThemeExtension<AppleColors> {
     accentEnergyText: Color(0xFFFF9F0A),
     accentSuccess: Color(0xFF30D158),
     accentSuccessText: Color(0xFF30D158),
+    accentDrink: Color(0xFF40CBE0),
     accentDanger: Color(0xFFFF453A),
     accentDangerText: Color(0xFFFF453A),
     fastGradient: [Color(0xFFFF9F0A), Color(0xFFE8590C)],

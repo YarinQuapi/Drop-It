@@ -45,6 +45,7 @@ enum MealCategory {
   lunch
   dinner
   snacks
+  drinks
 }
 
 enum Role {
