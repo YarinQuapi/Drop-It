@@ -214,6 +214,11 @@ class Copy {
   String get amount => pick('Amount', 'כמות');
   String get add => pick('Add', 'הוספה');
   String get createFood => pick('New food', 'מזון חדש');
+  String get oneTimeMeal => pick('One-time meal', 'ארוחה חד־פעמית');
+  String get oneTimeHint => pick(
+    'Totals for what you ate. Added to today only, not saved to your foods or published.',
+    'הערכים הם של כל מה שאכלתם. נרשמת להיום בלבד, בלי להישמר במזונות שלכם או להתפרסם.',
+  );
   String get editFood => pick('Edit food', 'עריכת מזון');
   String get deleteFood => pick('Delete food', 'מחיקת מזון');
   String get deleteFoodConfirm => pick(

@@ -1376,7 +1376,23 @@ class _TodayScreenState extends State<TodayScreen> {
         ),
       );
       if (!mounted || found == null) return;
-      if (found.food != null) {
+      if (found.oneTimeName != null) {
+        final added = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OneTimeMealScreen(
+              api: widget.api,
+              t: t,
+              meal: meal,
+              initialName: found.oneTimeName!,
+            ),
+          ),
+        );
+        if (added == true && mounted) {
+          await load();
+          await widget.sync();
+        }
+      } else if (found.food != null) {
         await addFood(found.food!, meal, initialAmount: found.lastAmount);
       } else if (found.barcode != null) {
         await lookup(found.barcode!, meal);
@@ -1550,7 +1566,7 @@ class _MealCard extends StatelessWidget {
                   minTileHeight: Gaps.hit,
                   title: Text(entry['name'] as String),
                   subtitle: Text(
-                    '${entry['amount']} ${t.unitOf(entry)}',
+                    '${entry['amount']} ${entry['basis'] == 'unit' && entry['amount'] == 1 ? t.unitSingular : t.unitOf(entry)}',
                     style: TextStyle(color: apple.labelSecondary),
                   ),
                   trailing: SizedBox(
@@ -1653,20 +1669,31 @@ class _ScanScreenState extends State<ScanScreen> {
 class FoodSearchOutcome {
   const FoodSearchOutcome.food(Map<String, dynamic> this.food, {this.lastAmount})
     : barcode = null,
-      newName = null;
+      newName = null,
+      oneTimeName = null;
   const FoodSearchOutcome.barcode(String this.barcode)
     : food = null,
       lastAmount = null,
-      newName = null;
+      newName = null,
+      oneTimeName = null;
   const FoodSearchOutcome.create(this.newName)
     : food = null,
       lastAmount = null,
-      barcode = null;
+      barcode = null,
+      oneTimeName = null;
+  const FoodSearchOutcome.oneTime(String this.oneTimeName)
+    : food = null,
+      lastAmount = null,
+      barcode = null,
+      newName = null;
 
   final Map<String, dynamic>? food;
   final num? lastAmount;
   final String? barcode;
   final String? newName;
+
+  /// Set (possibly empty) to log a one-time meal instead of a saved food.
+  final String? oneTimeName;
 }
 
 class FoodSearchScreen extends StatefulWidget {
@@ -1804,6 +1831,19 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
               padding: const EdgeInsets.symmetric(horizontal: Gaps.lg),
               child: FilledButton(onPressed: submit, child: Text(t.lookUp)),
             ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gaps.lg, Gaps.sm, Gaps.lg, Gaps.sm),
+            child: SizedBox(
+              height: Gaps.hit,
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(
+                  context,
+                  FoodSearchOutcome.oneTime(isBarcode ? '' : text),
+                ),
+                child: Text(t.oneTimeMeal),
+              ),
+            ),
+          ),
           if (error.isNotEmpty)
             Padding(
               padding: const EdgeInsets.all(Gaps.lg),
@@ -4822,6 +4862,138 @@ class _FoodScreenState extends State<FoodScreen> {
             },
             child: Text(t.save),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A meal typed in by hand: logged on today only, never saved as a food.
+/// Pops true once it is logged.
+class OneTimeMealScreen extends StatefulWidget {
+  const OneTimeMealScreen({
+    super.key,
+    required this.api,
+    required this.t,
+    required this.meal,
+    this.initialName = '',
+  });
+  final Api api;
+  final Copy t;
+  final String meal;
+  final String initialName;
+
+  @override
+  State<OneTimeMealScreen> createState() => _OneTimeMealScreenState();
+}
+
+class _OneTimeMealScreenState extends State<OneTimeMealScreen> {
+  late final name = TextEditingController(text: widget.initialName);
+  final calories = TextEditingController();
+  final protein = TextEditingController();
+  final carbohydrates = TextEditingController();
+  final fat = TextEditingController();
+  final fiber = TextEditingController();
+  final sugars = TextEditingController();
+  final sodium = TextEditingController();
+  String error = '';
+  bool busy = false;
+
+  @override
+  void dispose() {
+    for (final controller in [
+      name,
+      calories,
+      protein,
+      carbohydrates,
+      fat,
+      fiber,
+      sugars,
+      sodium,
+    ]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> add() async {
+    final t = widget.t;
+    final title = name.text.trim();
+    final values = [
+      parseDecimal(calories.text),
+      for (final c in [protein, carbohydrates, fat, fiber, sugars, sodium])
+        _parseOptional(c.text),
+    ];
+    if (title.isEmpty || values.any((value) => value == null)) {
+      setState(() => error = t.error('invalid_body'));
+      return;
+    }
+    setState(() {
+      busy = true;
+      error = '';
+    });
+    try {
+      await widget.api.send(
+        'POST',
+        '/api/days/today/one-time-entries',
+        body: {
+          'meal': widget.meal,
+          'name': title,
+          'calories': values[0],
+          'protein': values[1],
+          'carbohydrates': values[2],
+          'fat': values[3],
+          'fiber': values[4],
+          'sugars': values[5],
+          'sodium': values[6],
+        },
+      );
+      if (mounted) Navigator.pop(context, true);
+    } on ApiException catch (err) {
+      if (mounted) {
+        setState(() {
+          busy = false;
+          error = t.error(err.code);
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    return Scaffold(
+      appBar: AppBar(title: Text(t.oneTimeMeal)),
+      body: AppList(
+        gap: Gaps.md,
+        children: [
+          Text(
+            t.oneTimeHint,
+            style: TextStyle(color: context.apple.labelSecondary),
+          ),
+          TextField(
+            controller: name,
+            autofocus: widget.initialName.isEmpty,
+            maxLength: 120,
+            decoration: InputDecoration(labelText: t.name, counterText: ''),
+          ),
+          decimalField(calories, t.calories, hint: '0'),
+          for (final pair in [
+            [(protein, t.protein), (carbohydrates, t.carbohydrates)],
+            [(fat, t.fat), (fiber, t.fiber)],
+            [(sugars, t.sugars), (sodium, t.sodium)],
+          ])
+            Row(
+              spacing: Gaps.md,
+              children: [
+                for (final (controller, label) in pair)
+                  Expanded(
+                    child: decimalField(controller, label, hint: t.optional),
+                  ),
+              ],
+            ),
+          if (error.isNotEmpty) ErrorText(error),
+          FilledButton(onPressed: busy ? null : add, child: Text(t.add)),
         ],
       ),
     );

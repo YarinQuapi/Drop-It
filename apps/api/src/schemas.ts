@@ -109,6 +109,15 @@ export const entrySchema = z.object({
   meal: mealSchema,
 });
 
+// A meal typed in by hand: logged on that day only, never saved as a food.
+// The values are totals for what was eaten.
+export const oneTimeEntrySchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    meal: mealSchema,
+  })
+  .merge(nutrientsSchema);
+
 export const weightSchema = z.object({
   weightKg: z.number().gt(0).max(500),
   loggedAt: z.string().datetime().optional(),
