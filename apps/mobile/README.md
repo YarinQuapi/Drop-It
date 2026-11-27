@@ -32,3 +32,9 @@ samples, guidance on mobile development, and a full API reference.
   `fastEndsAt`, `fastStartHour`, `fastEndHour`, ...). See the `home_widget` package docs.
 - **Fast-end notification**: Settings > "Notify me when my fast ends" (default off, stored locally in
   `prefs.json`). Scheduled for `endsAt` when a fast is running, cancelled on stop or when toggled off.
+
+## Updating the iPhone app
+
+Run `./push-iphone.sh` with the iPhone unlocked and reachable. It re-signs the app and the widget,
+builds a release and installs it over the existing app. A free Apple account signs for 7 days, after
+which the app stops opening and the widget stops updating, so run it at least weekly.
