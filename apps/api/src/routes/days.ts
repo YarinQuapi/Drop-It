@@ -7,7 +7,7 @@ import { resolveGoal } from "../goals.js";
 import { asyncRoute, HttpError } from "../http.js";
 import { num } from "../present.js";
 import { requirePermission } from "../rbac.js";
-import { entrySchema } from "../schemas.js";
+import { entrySchema, oneTimeEntrySchema } from "../schemas.js";
 import { compareDays, dayToUtcDate, isDayString, todayJerusalem } from "../time.js";
 
 export const daysRouter = Router();
@@ -82,6 +82,28 @@ daysRouter.post(
           meal: body.meal,
           ...scaled,
         },
+      });
+      await closeRunningFast(tx, user.id);
+      return created;
+    });
+    res.status(201).json({ entry: presentEntry(entry), goalKcal: goal.goalKcal });
+  }),
+);
+
+daysRouter.post(
+  "/:day/one-time-entries",
+  requirePermission("entries:create"),
+  asyncRoute(async (req, res) => {
+    const day = resolveDay(req.params.day);
+    const user = currentUser(res);
+    if (compareDays(day, todayJerusalem()) > 0) throw new HttpError(400, "future_day");
+    const body = oneTimeEntrySchema.parse(req.body);
+    const goal = await resolveGoal(user.id, day, { future: false });
+    if (!goal) throw new HttpError(409, "profile_required");
+    const entry = await prisma.$transaction(async (tx) => {
+      const created = await tx.diaryEntry.create({
+        // One serving with no food behind it, so nothing reaches the catalog.
+        data: { ...body, userId: user.id, day: dayToUtcDate(day), basis: "unit", amount: 1 },
       });
       await closeRunningFast(tx, user.id);
       return created;

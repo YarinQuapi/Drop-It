@@ -649,6 +649,8 @@ function ProfileSetup({ onDone }: { onDone: (me: Me) => void }) {
   );
 }
 
+const NUTRIENT_FIELDS = ["protein", "carbohydrates", "fat", "fiber", "sugars", "sodium"] as const;
+
 const MEAL_COLOR: Record<MealCategory, string> = {
   breakfast: "var(--accent-primary)",
   lunch: "var(--accent-energy)",
@@ -671,6 +673,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
   const [lookup, setLookup] = useState<{ status: string; food: Food | null; foods: Food[]; suggestion?: FoodSuggestion | null } | null>(null);
   const [picked, setPicked] = useState<Food | null>(null);
   const [amount, setAmount] = useState("100");
+  const [oneTime, setOneTime] = useState(false);
   const [error, setError] = useState("");
   const [params, setParams] = useSearchParams();
   const searchInput = useRef<HTMLInputElement>(null);
@@ -724,6 +727,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
       .then((result) => {
         scrollToPicked.current = true;
         setLoggingMeal(meal as MealCategory);
+        setOneTime(false);
         setPicked(result.food);
         setAmount("100");
         loadRecent();
@@ -755,6 +759,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
     setResults(null);
     setLookup(null);
     setPicked(null);
+    setOneTime(false);
     setAmount("100");
     setError("");
     if (opening) {
@@ -796,6 +801,35 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
       setLoggingMeal(null);
       setLookup(null);
       setPicked(null);
+      setQuery("");
+      await reload();
+    } catch (err) {
+      setError(message(t, err));
+    }
+  }
+
+  async function addOneTime(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!loggingMeal) return;
+    const form = new FormData(event.currentTarget);
+    try {
+      await api(`/api/days/today/one-time-entries`, {
+        method: "POST",
+        body: JSON.stringify({
+          meal: loggingMeal,
+          name: form.get("name"),
+          calories: readNutrient(form.get("calories")),
+          protein: readNutrient(form.get("protein"), true),
+          carbohydrates: readNutrient(form.get("carbohydrates"), true),
+          fat: readNutrient(form.get("fat"), true),
+          fiber: readNutrient(form.get("fiber"), true),
+          sugars: readNutrient(form.get("sugars"), true),
+          sodium: readNutrient(form.get("sodium"), true),
+        }),
+      });
+      setLoggingMeal(null);
+      setOneTime(false);
+      setLookup(null);
       setQuery("");
       await reload();
     } catch (err) {
@@ -920,7 +954,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
               <div className="entry" key={entry.id}>
                 <div>
                   <strong>{entry.name}</strong>
-                  <div className="muted">{entry.amount} {unitLabel(t, entry)}</div>
+                  <div className="muted">{entry.amount} {entry.basis === "unit" && entry.amount === 1 ? t.unit : unitLabel(t, entry)}</div>
                 </div>
                 <div>
                   <span className="kcal">{formatKcal(entry.calories)}</span>
@@ -931,7 +965,7 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
             <button type="button" className={logging ? "secondary meal-log" : "meal-log"} onClick={() => openLog(meal)}>
               {logging ? t.cancel : t.log}
             </button>
-            <div className={logging && !picked ? "reveal open" : "reveal"} inert={!logging || Boolean(picked)}>
+            <div className={logging && !picked && !oneTime ? "reveal open" : "reveal"} inert={!logging || Boolean(picked) || oneTime}>
               <div className="reveal-inner">
                 <Form onSubmit={findFood} className="food-add" role="search">
                   <input
@@ -983,8 +1017,35 @@ function Today({ canVerifyFoods, onFastingChange }: { canVerifyFoods: boolean; o
                     ))}
                   </div>
                 )}
+                <button
+                  type="button"
+                  className="secondary meal-log"
+                  onClick={() => {
+                    setOneTime(true);
+                    setError("");
+                  }}
+                >
+                  {t.oneTimeMeal}
+                </button>
               </div>
             </div>
+            {logging && oneTime && (
+              <Form className="rise" onSubmit={addOneTime}>
+                <h3>{t.oneTimeMeal}</h3>
+                <p className="muted">{t.oneTimeHint}</p>
+                <label><span>{t.name}</span><input name="name" defaultValue={barcodeQuery ? "" : trimmedQuery} maxLength={120} required autoFocus /></label>
+                <label><span>{t.calories}</span><input name="calories" placeholder="0" inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
+                <div className="nutrient-grid">
+                  {NUTRIENT_FIELDS.map((field) => (
+                    <label key={field}><span>{t[field]}</span><input name={field} placeholder={t.optional} inputMode="decimal" pattern="\d+([.,]\d+)?" /></label>
+                  ))}
+                </div>
+                <div className="fast-actions">
+                  <button type="submit">{t.add}</button>
+                  <button type="button" className="secondary" onClick={() => { setOneTime(false); setError(""); }}>{t.back}</button>
+                </div>
+              </Form>
+            )}
             {logging && picked && (
               <Form
                 className="rise"
@@ -2095,7 +2156,7 @@ function FoodForm() {
       />
       <label><span>{t.calories}</span><input name="calories" defaultValue={food?.calories ?? (id ? undefined : params.get("calories") ?? undefined)} placeholder="0" inputMode="decimal" pattern="\d+([.,]\d+)?" required /></label>
       <div className="nutrient-grid">
-        {(["protein", "carbohydrates", "fat", "fiber", "sugars", "sodium"] as const).map((field) => (
+        {NUTRIENT_FIELDS.map((field) => (
           <label key={field}><span>{t[field]}</span><input name={field} defaultValue={food?.[field] ?? (id ? undefined : params.get(field) ?? undefined)} placeholder={t.optional} inputMode="decimal" pattern="\d+([.,]\d+)?" /></label>
         ))}
       </div>
